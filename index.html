@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>サークル会計</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--bg:#f0f4f8;--surface:#fff;--surface2:#f7fafc;--text:#1a202c;--text2:#718096;--accent:#2d6a4f;--accent2:#40916c;--border:#e2e8f0;--shadow:rgba(0,0,0,.08);--income:#276749;--income-bg:#c6f6d5;--payment:#9b2335;--payment-bg:#fed7d7;--pending:#b7791f;--pending-bg:#fefcbf;--danger:#e53e3e}
+[data-theme=dark]{--bg:#0f1923;--surface:#1a2535;--surface2:#1e2d40;--text:#e2e8f0;--text2:#718096;--accent:#40916c;--accent2:#52b788;--border:#2d3748;--shadow:rgba(0,0,0,.3);--income:#48bb78;--income-bg:#1a3a2a;--payment:#fc8181;--payment-bg:#3a1a1a;--pending:#f6ad55;--pending-bg:#3a2a10}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','Hiragino Sans','Meiryo',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px;transition:background .2s,color .2s}
+#lockScreen{position:fixed;inset:0;background:linear-gradient(160deg,#1b4332,#2d6a4f);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999}
+#lockScreen.hidden{display:none}
+.lock-icon{font-size:2.8rem;margin-bottom:12px}.lock-title{color:#fff;font-size:1.2rem;font-weight:700;margin-bottom:4px}.lock-sub{color:rgba(255,255,255,.6);font-size:.82rem;margin-bottom:24px}
+.pin-dots{display:flex;gap:16px;margin-bottom:24px}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.5);background:transparent;transition:background .15s}
+.pin-dot.filled{background:#fff;border-color:#fff}.pin-dot.error{border-color:#fc8181;background:#fc8181}
+.pin-pad{display:grid;grid-template-columns:repeat(3,72px);gap:12px}
+.pin-btn{width:72px;height:72px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;font-size:1.5rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s,transform .1s}
+.pin-btn:active{background:rgba(255,255,255,.3);transform:scale(.93)}.pin-btn.empty{visibility:hidden}
+.lock-error{color:#fc8181;font-size:.82rem;margin-top:16px;height:18px;font-weight:600;text-align:center}
+.setup-box{margin-top:20px;text-align:center;color:rgba(255,255,255,.8);font-size:.82rem;max-width:260px}
+.setup-box button{margin-top:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:10px;padding:8px 20px;font-size:.85rem;cursor:pointer;font-weight:700}
+.sync-banner{display:none;background:#ebf8ff;border-bottom:1px solid #bee3f8;padding:10px 16px;font-size:.82rem;color:#2b6cb0;align-items:center;gap:10px;flex-wrap:wrap}
+.sync-banner.active{display:flex}[data-theme=dark] .sync-banner{background:#1a2535;border-color:#2d3748;color:#63b3ed}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#48bb78;flex-shrink:0;animation:pulse 2s infinite}
+.sync-dot.offline{background:#fc8181;animation:none}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.qr-toggle{margin-left:auto;background:#2b6cb0;color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer}
+.qr-panel{display:none;background:var(--surface);padding:16px;text-align:center;border-bottom:1px solid var(--border)}.qr-panel.open{display:block}
+.qr-panel p{font-size:.82rem;color:var(--text2);margin-bottom:10px}.url-text{font-size:.88rem;font-weight:700;color:var(--accent);background:var(--surface2);padding:6px 12px;border-radius:8px;display:inline-block;margin-bottom:10px;word-break:break-all}
+header{background:linear-gradient(135deg,#2d6a4f,#40916c);color:#fff;padding:14px 18px 0;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
+.icon-btn{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.85rem;line-height:1}
+.tabs{display:flex;gap:3px;overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab-btn{flex:1;min-width:76px;padding:9px 4px;border:none;cursor:pointer;font-size:.78rem;font-weight:700;border-radius:10px 10px 0 0;background:rgba(255,255,255,.15);color:rgba(255,255,255,.75);white-space:nowrap;transition:all .15s}
+.tab-btn.active{background:var(--bg);color:var(--accent)}
+.container{max-width:700px;margin:0 auto;padding:16px 14px}.tab-content{display:none}.tab-content.active{display:block}
+.card{background:var(--surface);border-radius:16px;padding:18px 20px;box-shadow:0 4px 12px var(--shadow);margin-bottom:14px}
+.card-sm{background:var(--surface);border-radius:14px;padding:13px 16px;box-shadow:0 2px 8px var(--shadow)}
+.total-label{font-size:.82rem;color:var(--text2);margin-bottom:4px}.total-amount{font-size:2.4rem;font-weight:800;color:var(--accent);letter-spacing:-1px}.total-amount span{font-size:1.4rem;margin-right:4px}
+.saved-at{font-size:.72rem;color:var(--text2);margin-top:6px}.section-title{font-size:.75rem;font-weight:700;color:var(--text2);letter-spacing:.08em;margin:16px 0 8px;padding-left:4px}
+.denom-grid{background:var(--surface);border-radius:16px;box-shadow:0 4px 12px var(--shadow);overflow:hidden;margin-bottom:4px}
+.denom-row{display:grid;grid-template-columns:72px 1fr auto auto auto auto;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:8px}
+.denom-row:last-child{border-bottom:none}.denom-row.coin{background:color-mix(in srgb,var(--surface) 97%,#f6e05e)}.denom-row.bill{background:color-mix(in srgb,var(--surface) 97%,#90cdf4)}
+.denom-badge{display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;width:66px;padding:3px 0;border-radius:20px}
+.coin .denom-badge{background:#fde68a;color:#92400e}.bill .denom-badge{background:#bfdbfe;color:#1e40af}
+[data-theme=dark] .coin .denom-badge{background:#3d2e00;color:#f6e05e}[data-theme=dark] .bill .denom-badge{background:#1a2a4a;color:#90cdf4}
+.denom-name{font-size:.76rem;color:var(--text2)}
+.btn-count{width:30px;height:30px;border:1px solid var(--border);border-radius:50%;background:var(--surface);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:all .15s;flex-shrink:0}
+.btn-count:hover{background:var(--surface2)}.count-input{width:46px;text-align:center;font-size:.92rem;font-weight:700;border:1px solid var(--border);border-radius:8px;padding:4px 0;color:var(--text);background:var(--surface2);outline:none}
+.count-input:focus{border-color:var(--accent)}.subtotal{min-width:82px;text-align:right;font-size:.82rem;font-weight:600;color:var(--text2)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.btn-action{padding:11px;border-radius:12px;border:none;font-size:.83rem;font-weight:700;cursor:pointer;transition:all .15s}
+.btn-save{background:var(--accent);color:#fff;grid-column:1/-1}.btn-save:hover{background:#1b4332}
+.btn-reset{background:#fed7d7;color:#9b2335}.btn-history{background:#e9d8fd;color:#553c9a}
+[data-theme=dark] .btn-reset{background:#3a1a1a;color:#fc8181}[data-theme=dark] .btn-history{background:#2a1a4a;color:#b794f4}
+.history-panel{background:var(--surface);border-radius:16px;box-shadow:0 4px 12px var(--shadow);margin-top:14px;overflow:hidden;display:none}.history-panel.open{display:block}
+.history-header{padding:12px 16px;background:var(--surface2);font-weight:700;font-size:.88rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.history-list{max-height:240px;overflow-y:auto}
+.history-item{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:.82rem}
+.history-item:last-child{border-bottom:none}.hi-time{color:var(--text2);font-size:.7rem}.hi-total{font-weight:700;color:var(--accent)}
+.history-empty{padding:24px;text-align:center;color:var(--text2);font-size:.82rem}
+.bank-card-title{font-size:.75rem;font-weight:700;color:var(--text2);margin-bottom:10px;letter-spacing:.06em}
+.bank-balance-row{display:flex;align-items:center;gap:10px}
+.bank-balance-input{flex:1;font-size:1.3rem;font-weight:800;color:#1e40af;border:2px solid var(--border);border-radius:10px;padding:7px 12px;text-align:right;outline:none;background:var(--surface);transition:border-color .15s}
+.bank-balance-input:focus{border-color:#3b82f6}[data-theme=dark] .bank-balance-input{color:#90cdf4}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.s-label{font-size:.7rem;color:var(--text2);margin-bottom:4px;font-weight:600}.s-amount{font-size:1.05rem;font-weight:800}
+.s-income-done .s-amount{color:var(--income)}.s-income-pending .s-amount{color:var(--pending)}.s-payment-done .s-amount{color:var(--payment)}.s-payment-pending .s-amount{color:#702459}
+[data-theme=dark] .s-payment-pending .s-amount{color:#fbb6ce}
+.filter-row{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-size:.76rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .15s}
+.filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.search-badge{background:var(--payment);color:#fff;border-radius:10px;padding:1px 5px;font-size:.68rem;margin-left:3px}
+.search-panel{background:var(--surface);border-radius:16px;padding:16px;box-shadow:0 4px 12px var(--shadow);margin-bottom:12px;display:none}
+.search-panel.open{display:block}
+.search-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tx-list{background:var(--surface);border-radius:16px;box-shadow:0 4px 12px var(--shadow);overflow:hidden}
+.tx-empty{padding:36px 20px;text-align:center;color:var(--text2);font-size:.82rem}
+.tx-item{padding:11px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:start}
+.tx-item:last-child{border-bottom:none}.tx-item:hover{background:var(--surface2)}
+.tx-type-badge{padding:2px 7px;border-radius:12px;font-size:.7rem;font-weight:700;white-space:nowrap;margin-top:2px}
+.tx-type-badge.income{background:var(--income-bg);color:var(--income)}.tx-type-badge.payment{background:var(--payment-bg);color:var(--payment)}
+.tx-body{min-width:0}.tx-summary{font-size:.88rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx-meta{font-size:.7rem;color:var(--text2);margin-top:2px}
+.tx-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.tx-amount{font-size:.92rem;font-weight:800}.tx-amount.income{color:var(--income)}.tx-amount.payment{color:var(--payment)}
+.tx-status-btn{padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:700;cursor:pointer;border:none;white-space:nowrap}
+.tx-status-btn.done-income{background:var(--income-bg);color:var(--income)}.tx-status-btn.pending-income{background:var(--pending-bg);color:var(--pending)}
+.tx-status-btn.done-payment{background:var(--payment-bg);color:var(--payment)}.tx-status-btn.pending-payment{background:#feebc8;color:#7b341e}
+[data-theme=dark] .tx-status-btn.pending-payment{background:#3a1a00;color:#fbd38d}
+.tx-row-actions{display:flex;gap:4px;margin-top:3px}
+.tx-edit-btn,.tx-del-btn,.tx-rec-btn{font-size:.7rem;padding:2px 6px;border-radius:7px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--text2)}
+.tx-del-btn:hover{background:var(--payment-bg);color:var(--payment)}.tx-edit-btn:hover{background:#ebf8ff;color:#2b6cb0}
+.cat-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.cat-chip{padding:3px 9px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);font-size:.73rem;cursor:pointer;color:var(--text2);transition:all .15s}
+.cat-chip.selected{border-color:var(--accent);background:var(--accent);color:#fff}
+.fab{position:fixed;bottom:24px;right:24px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:1.5rem;cursor:pointer;box-shadow:0 4px 16px rgba(45,106,79,.4);display:none;align-items:center;justify-content:center;transition:transform .15s;z-index:100}
+.fab.visible{display:flex}.fab:hover{background:#1b4332;transform:scale(1.08)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:none;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-sheet{background:var(--surface);border-radius:24px 24px 0 0;width:100%;max-width:700px;padding:22px 18px 36px;max-height:92vh;overflow-y:auto;animation:slideUp .25s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-title{font-size:.98rem;font-weight:700;margin-bottom:16px;color:var(--text)}
+.type-toggle{display:flex;margin-bottom:16px;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+.type-toggle-btn{flex:1;padding:9px;border:none;cursor:pointer;font-size:.85rem;font-weight:700;background:var(--surface2);color:var(--text2);transition:all .15s}
+.type-toggle-btn.active-income{background:#276749;color:#fff}.type-toggle-btn.active-payment{background:#9b2335;color:#fff}
+.form-group{margin-bottom:13px}.form-label{font-size:.74rem;font-weight:700;color:var(--text2);margin-bottom:5px;display:block}
+.form-input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;font-size:.92rem;outline:none;color:var(--text);background:var(--surface);font-family:inherit;transition:border-color .15s}
+.form-input:focus{border-color:var(--accent)}
+.status-toggle{display:flex;gap:8px;margin-top:4px}
+.status-option{flex:1;padding:8px;border:2px solid var(--border);border-radius:10px;background:var(--surface);font-size:.8rem;font-weight:700;cursor:pointer;text-align:center;color:var(--text2);transition:all .15s}
+.status-option.sel-done-income{border-color:#276749;background:#f0fff4;color:#276749}[data-theme=dark] .status-option.sel-done-income{background:#1a3a2a}
+.status-option.sel-pending-income{border-color:#d69e2e;background:#fffff0;color:#744210}[data-theme=dark] .status-option.sel-pending-income{background:#2a1a00}
+.status-option.sel-done-payment{border-color:#9b2335;background:#fff5f5;color:#9b2335}[data-theme=dark] .status-option.sel-done-payment{background:#3a1a1a}
+.status-option.sel-pending-payment{border-color:#c05621;background:#fffaf0;color:#7b341e}[data-theme=dark] .status-option.sel-pending-payment{background:#2a1000}
+.account-opts{display:flex;gap:6px;margin-top:4px}
+.account-opt{flex:1;padding:7px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:.76rem;font-weight:600;cursor:pointer;text-align:center;color:var(--text2);transition:all .15s}
+.account-opt.sel{border-color:var(--accent);background:var(--accent);color:#fff}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-cancel{flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);font-size:.88rem;font-weight:700;cursor:pointer;color:var(--text2)}
+.modal-save{flex:2;padding:12px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:.88rem;font-weight:700;cursor:pointer}
+.period-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.period-btn{padding:5px 11px;border-radius:16px;border:1px solid var(--border);background:var(--surface);font-size:.76rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .15s}
+.period-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chart-wrap{background:var(--surface);border-radius:16px;padding:16px;box-shadow:0 4px 12px var(--shadow);margin-bottom:14px}
+.export-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.btn-sm{padding:7px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);font-size:.76rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .15s}
+.btn-sm:hover{background:var(--surface2)}.btn-sm.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.budget-item{margin-bottom:12px}.budget-row{display:flex;justify-content:space-between;align-items:center;font-size:.8rem;margin-bottom:4px}
+.budget-bar{height:8px;border-radius:4px;background:var(--border);overflow:hidden}
+.budget-fill{height:100%;border-radius:4px;background:var(--accent);transition:width .4s}.budget-fill.over{background:var(--danger)}
+.cat-manager-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.82rem}
+.member-list{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.member-chip{display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);font-size:.78rem}
+.member-del{background:none;border:none;cursor:pointer;color:var(--text2);font-size:.85rem;line-height:1}
+.project-card{background:var(--surface);border-radius:14px;padding:14px 16px;box-shadow:0 2px 8px var(--shadow);margin-bottom:10px}
+.project-title{font-size:.9rem;font-weight:700;margin-bottom:5px}.project-meta{font-size:.73rem;color:var(--text2);margin-bottom:8px}
+.project-member-row{display:flex;flex-wrap:wrap;gap:5px}
+.pm-chip{padding:3px 8px;border-radius:12px;font-size:.72rem;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2);transition:all .15s}
+.pm-chip.paid{background:var(--income-bg);color:var(--income);border-color:var(--income)}
+.audit-item{padding:8px 14px;border-bottom:1px solid var(--border);font-size:.76rem;display:flex;justify-content:space-between}
+.audit-item:last-child{border-bottom:none}
+.dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:800;display:none;align-items:center;justify-content:center;padding:20px}
+.dialog-overlay.open{display:flex}
+.dialog-box{background:var(--surface);border-radius:20px;padding:24px;max-width:340px;width:100%;text-align:center}
+.dialog-box h3{font-size:1rem;font-weight:700;margin-bottom:10px}.dialog-box p{font-size:.83rem;color:var(--text2);margin-bottom:18px;line-height:1.5}
+.dialog-btns{display:flex;gap:10px}.dialog-btns button{flex:1;padding:10px;border-radius:10px;border:none;font-size:.83rem;font-weight:700;cursor:pointer}
+.btn-reload{background:var(--accent);color:#fff}.btn-force{background:var(--payment-bg);color:var(--payment)}
+.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(100px);background:#2d3748;color:#fff;padding:11px 22px;border-radius:24px;font-size:.83rem;font-weight:600;transition:transform .3s cubic-bezier(.175,.885,.32,1.275);pointer-events:none;z-index:1000;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+@media print{#lockScreen,.sync-banner,.qr-panel,header .tabs,.tab-btn,.fab,.modal-overlay,.dialog-overlay,.toast,.actions,.tx-row-actions,.filter-row,.export-row,.period-row,.search-panel,.icon-btn{display:none!important}body{background:#fff;color:#000;padding:0}.card,.chart-wrap,.tx-list{box-shadow:none;border:1px solid #ddd}}
+</style>
+</head>
+<body>
+<div id="lockScreen">
+  <div class="lock-icon">🔒</div>
+  <div class="lock-title">サークル会計</div>
+  <div class="lock-sub" id="lockSub">PINを入力してください</div>
+  <div class="pin-dots"><div class="pin-dot" id="dot0"></div><div class="pin-dot" id="dot1"></div><div class="pin-dot" id="dot2"></div><div class="pin-dot" id="dot3"></div></div>
+  <div class="pin-pad">
+    <button class="pin-btn" onclick="pinInput('1')">1</button><button class="pin-btn" onclick="pinInput('2')">2</button><button class="pin-btn" onclick="pinInput('3')">3</button>
+    <button class="pin-btn" onclick="pinInput('4')">4</button><button class="pin-btn" onclick="pinInput('5')">5</button><button class="pin-btn" onclick="pinInput('6')">6</button>
+    <button class="pin-btn" onclick="pinInput('7')">7</button><button class="pin-btn" onclick="pinInput('8')">8</button><button class="pin-btn" onclick="pinInput('9')">9</button>
+    <button class="pin-btn empty"></button><button class="pin-btn" onclick="pinInput('0')">0</button><button class="pin-btn" onclick="pinDelete()">⌫</button>
+  </div>
+  <div class="lock-error" id="lockError"></div>
+  <div class="setup-box" id="setupBox" style="display:none">
+    <div>PINが設定されていません。<br>4桁のPINを設定してください。</div>
+    <div id="setupStep" style="margin-top:8px;opacity:.7;font-size:.78rem"></div>
+  </div>
+</div>
+<div class="sync-banner" id="syncBanner">
+  <div class="sync-dot" id="syncDot"></div>
+  <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div></div>
+  <button class="qr-toggle" onclick="toggleQR()">QRコード</button>
+</div>
+<div class="qr-panel" id="qrPanel">
+  <p>スマホのカメラで読み取ってください</p>
+  <div class="url-text" id="qrUrlText"></div>
+  <img id="qrImg" src="" alt="QR" width="150" height="150">
+</div>
+<header>
+  <div class="header-top">
+    <h1>💰 サークル会計</h1>
+    <div class="header-right">
+      <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="ダークモード切替">🌙</button>
+      <button class="icon-btn" id="userBtn" onclick="openUserMgr()" title="ユーザー管理" style="display:none">👤</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('cash')">🪙 現金</button>
+    <button class="tab-btn" onclick="switchTab('bank')">📒 取引</button>
+    <button class="tab-btn" onclick="switchTab('report')">📊 レポート</button>
+    <button class="tab-btn" onclick="switchTab('collect')">👥 集金</button>
+  </div>
+</header>
+<div class="container">
+  <!-- TAB: 現金 -->
+  <div class="tab-content active" id="tab-cash">
+    <div class="card" style="text-align:center">
+      <div class="total-label">現在の手持ち現金</div>
+      <div class="total-amount" id="totalAmount"><span>¥</span>0</div>
+      <div class="saved-at" id="savedAt"></div>
+    </div>
+    <div class="section-title">🪙 硬貨</div><div class="denom-grid" id="coinGrid"></div>
+    <div class="section-title">💴 紙幣</div><div class="denom-grid" id="billGrid"></div>
+    <div class="actions">
+      <button class="btn-action btn-save" onclick="saveSnapshot()">💾 この状態を保存</button>
+      <button class="btn-action btn-reset" onclick="resetAll()">🗑 リセット</button>
+      <button class="btn-action btn-history" onclick="toggleHistory()">📋 保存履歴</button>
+      <button class="btn-action" style="background:#e9d8fd;color:#553c9a;grid-column:1/-1" onclick="toggleDenomCalc()">💱 金額から金種を逆算</button>
+    </div>
+    <div id="denomCalcPanel" style="display:none;background:var(--surface);border-radius:16px;padding:16px;box-shadow:0 4px 12px var(--shadow);margin-top:14px">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">💱 金種逆算</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="denomCalcInput" class="form-input" type="number" min="0" placeholder="金額を入力（円）" style="flex:1" oninput="calcDenom()">
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="filter-btn active" id="dcModeMin" onclick="setDcMode('min',this)">最少枚数</button>
+        <button class="filter-btn" id="dcModeStock" onclick="setDcMode('stock',this)">手持ちを考慮</button>
+      </div>
+      <div id="denomCalcResult" style="font-size:.82rem;color:var(--text)"></div>
+    </div>
+    <div class="history-panel" id="historyPanel">
+      <div class="history-header"><span>保存履歴</span><button onclick="clearHistory()" style="background:none;border:none;color:var(--danger);font-size:.76rem;cursor:pointer;font-weight:700">履歴を削除</button></div>
+      <div class="history-list" id="historyList"></div>
+    </div>
+  </div>
+  <!-- TAB: 取引 -->
+  <div class="tab-content" id="tab-bank">
+    <div class="card">
+      <div class="bank-card-title">📖 通帳残高</div>
+      <div class="bank-balance-row">
+        <span style="font-size:.9rem;color:var(--text2)">残高</span>
+        <input id="bankBalanceInput" class="bank-balance-input" type="number" min="0" placeholder="0" oninput="onBankBalanceChange()">
+        <span style="color:var(--text2)">円</span>
+      </div>
+    </div>
+    <div class="summary-grid">
+      <div class="card-sm s-income-done"><div class="s-label">入金済み合計</div><div class="s-amount" id="sum-income-done">¥0</div></div>
+      <div class="card-sm s-income-pending"><div class="s-label">未入金合計</div><div class="s-amount" id="sum-income-pending">¥0</div></div>
+      <div class="card-sm s-payment-done"><div class="s-label">支払済み合計</div><div class="s-amount" id="sum-payment-done">¥0</div></div>
+      <div class="card-sm s-payment-pending"><div class="s-label">未払い合計</div><div class="s-amount" id="sum-payment-pending">¥0</div></div>
+    </div>
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="setFilter('all',this)">すべて</button>
+      <button class="filter-btn" onclick="setFilter('income',this)">入金</button>
+      <button class="filter-btn" onclick="setFilter('payment',this)">支払い</button>
+      <button class="filter-btn" onclick="setFilter('pending',this)">未処理</button>
+      <button class="filter-btn" onclick="toggleSearch(this)" id="searchToggleBtn">🔍 検索</button>
+    </div>
+    <div class="search-panel" id="searchPanel">
+      <div class="search-grid">
+        <div class="form-group"><label class="form-label">キーワード</label><input id="srchText" class="form-input" type="text" placeholder="摘要・支払先" oninput="applySearch()"></div>
+        <div class="form-group"><label class="form-label">カテゴリ</label><select id="srchCat" class="form-input" onchange="applySearch()"><option value="">すべて</option></select></div>
+        <div class="form-group"><label class="form-label">開始日</label><input id="srchFrom" class="form-input" type="date" onchange="applySearch()"></div>
+        <div class="form-group"><label class="form-label">終了日</label><input id="srchTo" class="form-input" type="date" onchange="applySearch()"></div>
+        <div class="form-group"><label class="form-label">最小金額</label><input id="srchMin" class="form-input" type="number" min="0" placeholder="0" oninput="applySearch()"></div>
+        <div class="form-group"><label class="form-label">最大金額</label><input id="srchMax" class="form-input" type="number" min="0" oninput="applySearch()"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <select id="srchAccount" class="form-input" onchange="applySearch()"><option value="">口座：すべて</option><option value="現金">現金</option><option value="通帳">通帳</option><option value="未設定">未設定</option></select>
+        <button class="btn-sm" onclick="clearSearch()">クリア</button>
+      </div>
+    </div>
+    <div class="tx-list" id="txList"><div class="tx-empty">取引がありません<br><small>＋ボタンで追加できます</small></div></div>
+  </div>
+  <!-- TAB: レポート -->
+  <div class="tab-content" id="tab-report">
+    <div class="card">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">📅 集計期間</div>
+      <div class="period-row">
+        <button class="period-btn active" onclick="setPeriod('month',this)">今月</button>
+        <button class="period-btn" onclick="setPeriod('last',this)">先月</button>
+        <button class="period-btn" onclick="setPeriod('fiscal',this)">今年度</button>
+        <button class="period-btn" onclick="setPeriod('all',this)">全期間</button>
+        <button class="period-btn" onclick="setPeriod('custom',this)">カスタム</button>
+      </div>
+      <div id="customDateRow" style="display:none;display:flex;gap:8px;margin-top:8px">
+        <input id="periodFrom" class="form-input" type="date" style="flex:1" onchange="renderReport()">
+        <input id="periodTo" class="form-input" type="date" style="flex:1" onchange="renderReport()">
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:.82rem;font-weight:700;margin-bottom:12px">📊 収支サマリー</div>
+      <div id="reportSummary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center"></div>
+    </div>
+    <div class="chart-wrap"><canvas id="donutChart"></canvas></div>
+    <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+    <div class="card">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">📤 データ出力</div>
+      <div class="export-row">
+        <button class="btn-sm" onclick="exportCSV()">CSV</button>
+        <button class="btn-sm" onclick="exportExcel()">Excel</button>
+        <button class="btn-sm" onclick="exportJSON()">JSON</button>
+        <button class="btn-sm" onclick="document.getElementById('importFile').click()">📥 インポート</button>
+        <button class="btn-sm" onclick="exportEncrypted()">🔐 暗号化バックアップ</button>
+        <button class="btn-sm" onclick="document.getElementById('encImportFile').click()">🔓 復元</button>
+        <button class="btn-sm" onclick="window.print()">🖨 印刷</button>
+      </div>
+      <input type="file" id="importFile" accept=".csv,.json,.xlsx" style="display:none" onchange="importFile(event)">
+      <input type="file" id="encImportFile" accept=".enc" style="display:none" onchange="importEncrypted(event)">
+    </div>
+    <div class="card">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">🏷 カテゴリ管理</div>
+      <div id="catManagerList"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="newCatInput" class="form-input" type="text" placeholder="カテゴリ名" style="flex:1">
+        <button class="btn-sm primary" onclick="addCategory()">追加</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">💹 予算管理</div>
+      <div id="budgetList"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <select id="budgetCatSel" class="form-input" style="flex:1;min-width:100px"></select>
+        <input id="budgetAmt" class="form-input" type="number" min="0" placeholder="予算金額" style="flex:1;min-width:100px">
+        <button class="btn-sm primary" onclick="setBudget()">設定</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:.78rem;font-weight:700;color:var(--text2)">📋 操作ログ</div>
+        <button class="btn-sm" onclick="exportAudit()">CSV出力</button>
+      </div>
+      <div id="auditLogList" style="max-height:200px;overflow-y:auto;background:var(--surface2);border-radius:10px"></div>
+    </div>
+  </div>
+  <!-- TAB: 集金 -->
+  <div class="tab-content" id="tab-collect">
+    <div class="card">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">👤 メンバー管理</div>
+      <div class="member-list" id="memberList"></div>
+      <div style="display:flex;gap:8px">
+        <input id="newMemberInput" class="form-input" type="text" placeholder="メンバー名" style="flex:1">
+        <button class="btn-sm primary" onclick="addMember()">追加</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">📁 集金プロジェクト</div>
+      <button class="btn-sm primary" onclick="openCollectModal()">＋ 新規</button>
+    </div>
+    <div id="projectList"></div>
+  </div>
+</div>
+<button class="fab" id="fab" onclick="openModal()">＋</button>
+<!-- 取引モーダル -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOnBg(event)">
+  <div class="modal-sheet">
+    <div class="modal-title" id="modalTitle">取引を追加</div>
+    <div class="type-toggle">
+      <button class="type-toggle-btn active-income" id="typeIncome" onclick="setType('income')">入金</button>
+      <button class="type-toggle-btn" id="typePayment" onclick="setType('payment')">支払い</button>
+    </div>
+    <div class="form-group"><label class="form-label">日付</label><input id="formDate" class="form-input" type="date"></div>
+    <div class="form-group"><label class="form-label">摘要</label><input id="formSummary" class="form-input" type="text" placeholder="例：部費、備品代"></div>
+    <div class="form-group"><label class="form-label" id="formPayeeLabel">支払先 / 受取先</label><input id="formPayee" class="form-input" type="text" placeholder="例：○○商店"></div>
+    <div class="form-group"><label class="form-label">金額（円）</label><input id="formAmount" class="form-input" type="number" min="0" max="9999999999" placeholder="0"></div>
+    <div class="form-group"><label class="form-label">カテゴリ</label><div class="cat-chips" id="formCatChips"></div></div>
+    <div class="form-group">
+      <label class="form-label">口座区分</label>
+      <div class="account-opts">
+        <button class="account-opt sel" id="accCash" onclick="setAccount('現金')">現金</button>
+        <button class="account-opt" id="accBank" onclick="setAccount('通帳')">通帳</button>
+        <button class="account-opt" id="accOther" onclick="setAccount('未設定')">未設定</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" id="statusLabel">ステータス</label>
+      <div class="status-toggle">
+        <button class="status-option sel-done-income" id="statusDone" onclick="setStatus('done')">入金済み</button>
+        <button class="status-option" id="statusPending" onclick="setStatus('pending')">未入金</button>
+      </div>
+    </div>
+    <div class="form-group" id="receiptGroup">
+      <label class="form-label">領収書写真</label>
+      <input type="file" id="receiptInput" accept="image/*" capture="environment" onchange="handleReceipt(event)" style="display:none">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-sm" onclick="document.getElementById('receiptInput').click()">📷 撮影 / 選択</button>
+        <span id="receiptFilename" style="font-size:.76rem;color:var(--text2)"></span>
+        <button id="receiptClearBtn" class="btn-sm" onclick="clearReceipt()" style="display:none">削除</button>
+      </div>
+      <img id="receiptThumb" style="max-width:100%;border-radius:10px;margin-top:8px;display:none;max-height:120px;object-fit:contain">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="modal-save" onclick="saveTx()">保存する</button>
+    </div>
+  </div>
+</div>
+<!-- 集金プロジェクトモーダル -->
+<div class="modal-overlay" id="collectModal" onclick="closeModalOnBg(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">集金プロジェクト</div>
+    <div class="form-group"><label class="form-label">プロジェクト名</label><input id="cpName" class="form-input" type="text" placeholder="例：合宿費用"></div>
+    <div class="form-group"><label class="form-label">一人当たり金額（円）</label><input id="cpAmount" class="form-input" type="number" min="0"></div>
+    <div class="form-group"><label class="form-label">締切日</label><input id="cpDeadline" class="form-input" type="date"></div>
+    <div class="form-group"><label class="form-label">メモ</label><input id="cpMemo" class="form-input" type="text" placeholder="任意"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeCollectModal()">キャンセル</button>
+      <button class="modal-save" onclick="saveCollectProject()">保存</button>
+    </div>
+  </div>
+</div>
+<!-- 暗号化バックアップモーダル -->
+<div class="modal-overlay" id="backupModal" onclick="closeModalOnBg(event)">
+  <div class="modal-sheet">
+    <div class="modal-title" id="backupModalTitle">暗号化バックアップ</div>
+    <div class="form-group"><label class="form-label">パスフレーズ（8文字以上推奨）</label><input id="backupPass" class="form-input" type="password" placeholder="パスフレーズを入力"></div>
+    <div id="backupImportSection" style="display:none">
+      <div class="form-group"><label class="form-label">復元方法</label>
+        <div style="display:flex;gap:8px">
+          <button class="account-opt sel" id="mergeMode" onclick="setRestoreMode('merge')">マージ</button>
+          <button class="account-opt" id="replaceMode" onclick="setRestoreMode('replace')">置換</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeBackupModal()">キャンセル</button>
+      <button class="modal-save" id="backupActionBtn" onclick="doBackupAction()">ダウンロード</button>
+    </div>
+  </div>
+</div>
+<!-- ユーザー管理モーダル -->
+<div class="modal-overlay" id="userMgrModal" onclick="closeModalOnBg(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">ユーザー管理</div>
+    <div id="userList" style="margin-bottom:16px"></div>
+    <div class="form-group"><label class="form-label">ユーザー名</label><input id="newUsername" class="form-input" type="text" placeholder="ユーザー名"></div>
+    <div class="form-group"><label class="form-label">ロール</label>
+      <select id="newUserRole" class="form-input"><option value="editor">editor</option><option value="viewer">viewer</option><option value="admin">admin</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="document.getElementById('userMgrModal').classList.remove('open')">閉じる</button>
+      <button class="modal-save" onclick="addUser()">追加</button>
+    </div>
+  </div>
+</div>
+<!-- 競合ダイアログ -->
+<div class="dialog-overlay" id="conflictDialog">
+  <div class="dialog-box">
+    <h3>⚠ データが競合しています</h3>
+    <p>別のデバイスで更新されたデータと競合しました。どうしますか？</p>
+    <div class="dialog-btns">
+      <button class="btn-reload" onclick="resolveConflict('reload')">サーバーから再読込</button>
+      <button class="btn-force" onclick="resolveConflict('force')">強制上書き</button>
+    </div>
+  </div>
+</div>
+<!-- 領収書プレビュー -->
+<div class="dialog-overlay" id="receiptDialog" onclick="this.classList.remove('open')">
+  <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:16px;padding:12px;max-width:90vw;max-height:90vh;overflow:auto">
+    <img id="receiptPreviewImg" src="" style="max-width:80vw;max-height:80vh;border-radius:10px;display:block">
+    <div style="text-align:center;margin-top:8px"><button class="btn-sm" onclick="document.getElementById('receiptDialog').classList.remove('open')">閉じる</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" async></script>
+<script>
+// ===== CONSTANTS =====
+const DEVICE_ID = localStorage.getItem('circle_did') || (()=>{const id=crypto.randomUUID();localStorage.setItem('circle_did',id);return id;})();
+const COINS=[{v:1,l:'1円'},{v:5,l:'5円'},{v:10,l:'10円'},{v:50,l:'50円'},{v:100,l:'100円'},{v:500,l:'500円'}];
+const BILLS=[{v:1000,l:'千円'},{v:5000,l:'五千円'},{v:10000,l:'一万円'}];
+const ALL_DENOMS=[...COINS.map(d=>({...d,type:'coin'})),...BILLS.map(d=>({...d,type:'bill'}))];
+const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽費','助成金','その他'];
+const MAX_AMT=9999999999, MAX_AUDIT=10000;
+
+// ===== STATE =====
+let authToken=sessionStorage.getItem('circle_token')||'';
+let userRole=sessionStorage.getItem('circle_role')||'admin';
+let pinBuffer='';
+let counts={}; ALL_DENOMS.forEach(d=>counts[d.v]=0);
+let bankBalance=0,transactions=[],categories=[...DEFAULT_CATS],budgets={},collections=[],auditLog=[];
+let lastServerVersion=0,isSyncing=false;
+let currentFilter='all',editingId=null,modalType='income',modalStatus='done',modalAccount='現金';
+let searchActive=false,searchFilters={},receiptData=null;
+let currentPeriod='month',periodFrom='',periodTo='';
+let donutChart=null,barChart=null;
+let backupEncFile=null,restoreMode='merge';
+let deviceName=localStorage.getItem('circle_dname')||'';
+let conflictServerVersion=0;
+
+// ===== UTILS =====
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const formatYen=n=>Number(n).toLocaleString('ja-JP');
+const todayStr=()=>new Date().toISOString().slice(0,10);
+function formatDate(d){const dt=typeof d==='string'?new Date(d):d;return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+async function sha256(str){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+
+// ===== PIN AUTH =====
+function pinInput(d){
+  if(pinBuffer.length>=4)return;
+  pinBuffer+=d;updateDots();
+  if(pinBuffer.length===4)setTimeout(checkPin,120);
+}
+function pinDelete(){
+  pinBuffer=pinBuffer.slice(0,-1);
+  updateDots();document.getElementById('lockError').textContent='';
+}
+function updateDots(){
+  for(let i=0;i<4;i++){const d=document.getElementById(`dot${i}`);d.classList.toggle('filled',i<pinBuffer.length);d.classList.remove('error');}
+}
+async function checkPin(){
+  if(pinBuffer.length!==4)return;
+  const pin=pinBuffer;
+  try{
+    const res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    if(res.ok){
+      const{token}=await res.json();
+      authToken=token;userRole='admin';
+      sessionStorage.setItem('circle_token',token);sessionStorage.setItem('circle_role','admin');
+      unlock();
+      await loadData();
+      startPolling();
+    }else if(res.status===401){
+      showPinError('PINが違います');
+    }else{
+      showPinError('認証に失敗しました');
+    }
+  }catch(e){
+    showPinError('サーバーに接続できません');
+  }finally{
+    setTimeout(()=>{pinBuffer='';updateDots();},600);
+  }
+}
+function showPinError(msg='PINが違います'){for(let i=0;i<4;i++)document.getElementById(`dot${i}`).classList.add('error');document.getElementById('lockError').textContent=msg;setTimeout(()=>{updateDots();document.getElementById('lockError').textContent='';},900);}
+function unlock(){document.getElementById('lockScreen').classList.add('hidden');applyRole();if(!deviceName)promptDeviceName();}
+document.addEventListener('keydown',e=>{if(document.getElementById('lockScreen').classList.contains('hidden'))return;if(e.key>='0'&&e.key<='9')pinInput(e.key);if(e.key==='Backspace')pinDelete();});
+
+// ===== SYNC BANNER =====
+function initSyncBanner(){
+  const url=location.href.replace(/\/$/,'');
+  document.getElementById('syncBanner').classList.add('active');
+  document.getElementById('syncUrlText').textContent=url;
+  document.getElementById('qrUrlText').textContent=url;
+  document.getElementById('qrImg').src=`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
+}
+function toggleQR(){document.getElementById('qrPanel').classList.toggle('open');}
+
+// ===== MIGRATE =====
+function migrateTx(tx){
+  if(!tx.id)tx.id=crypto.randomUUID();
+  if(!tx.account)tx.account='未設定';
+  if(!tx.category)tx.category='';
+  if(tx.applied===undefined)tx.applied=tx.status==='done';
+  return tx;
+}
+
+// ===== PERSIST / LOAD =====
+function buildPayload(){return{counts:{...counts},bankBalance,transactions:[...transactions],categories:[...categories],budgets:{...budgets},collections:[...collections],auditLog:[...auditLog],savedAt:new Date().toISOString()};}
+function getToken(){return sessionStorage.getItem('circle_token');}
+async function apiLoad(){
+  const r=await fetch('/api/data',{headers:{'Authorization':'Bearer '+getToken()}});
+  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
+  if(!r.ok)throw new Error('load_failed');
+  return await r.json();
+}
+async function apiSave(payload){
+  const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({data:payload,expectedVersion:lastServerVersion})});
+  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
+  if(r.status===409){const e=await r.json();return{conflict:true,currentVersion:e.currentVersion,currentData:e.currentData};}
+  if(!r.ok)throw new Error('save_failed');
+  const d=await r.json();lastServerVersion=d.version;return{conflict:false};
+}
+function handleAuthFailure(){
+  authToken='';sessionStorage.removeItem('circle_token');sessionStorage.removeItem('circle_role');
+  document.getElementById('lockScreen').classList.remove('hidden');
+  pinBuffer='';updateDots();
+}
+async function persist(){
+  const p=buildPayload();
+  try{localStorage.setItem('circle_data',JSON.stringify(p));}catch(e){showToast('⚠ ローカル保存失敗（容量超過の可能性）');}
+  if(!getToken()||isSyncing)return;
+  isSyncing=true;
+  try{
+    const result=await apiSave(p);
+    if(result.conflict){
+      const ok=confirm('他の端末で更新されています。\n\n「OK」：他の端末の変更を取得して自分の変更を破棄\n「キャンセル」：そのまま強制上書き');
+      if(ok){applyData(result.currentData);lastServerVersion=result.currentVersion;showToast('🔄 最新を読み込みました');}
+      else{lastServerVersion=result.currentVersion;await apiSave(p);showToast('💾 強制保存しました');}
+    }
+  }catch(e){
+    if(e.message!=='unauthorized')showToast('⚠ サーバー保存失敗（ローカルにのみ保存）');
+  }finally{isSyncing=false;}
+}
+async function loadData(){
+  try{
+    const{data,version}=await apiLoad();
+    lastServerVersion=version||0;applyData(data||{});
+  }catch(e){
+    if(e.message!=='unauthorized'){
+      const cached=localStorage.getItem('circle_data');
+      if(cached){try{applyData(JSON.parse(cached));showToast('⚠ オフライン：ローカルデータを表示中');}catch{}}
+    }
+  }
+}
+function applyData(data){
+  ALL_DENOMS.forEach(d=>counts[d.v]=data.counts?.[d.v]??0);
+  bankBalance=data.bankBalance??0;
+  transactions=(data.transactions||[]).map(migrateTx);
+  categories=data.categories?.length?data.categories:[...DEFAULT_CATS];
+  budgets=data.budgets||{};collections=data.collections||[];auditLog=data.auditLog||[];
+  if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
+  syncInputs();document.getElementById('bankBalanceInput').value=bankBalance||'';
+  renderTxList();updateSummary();renderReport();renderCollection();renderCatManager();renderBudget();renderAuditLog();
+}
+function startPolling(){
+  setInterval(async()=>{
+    if(isSyncing||!getToken())return;
+    try{
+      const{data,version}=await apiLoad();
+      if(version!==lastServerVersion){applyData(data||{});lastServerVersion=version;showToast('🔄 データを同期しました');}
+      document.getElementById('syncDot').classList.remove('offline');
+    }catch{document.getElementById('syncDot').classList.add('offline');}
+  },5000);
+}
+
+// ===== CASH TAB =====
+const calcTotal=()=>ALL_DENOMS.reduce((s,d)=>s+d.v*counts[d.v],0);
+function updateTotal(){document.getElementById('totalAmount').innerHTML=`<span>¥</span>${formatYen(calcTotal())}`;}
+function updateSubtotal(v){const el=document.getElementById(`sub_${v}`);if(el)el.textContent='= ¥'+formatYen(v*counts[v]);}
+function setCount(v,val){counts[v]=Math.max(0,isNaN(val)?0:Math.floor(val));const i=document.getElementById(`input_${v}`);if(i)i.value=counts[v];updateSubtotal(v);updateTotal();persist();}
+function syncInputs(){ALL_DENOMS.forEach(d=>{const i=document.getElementById(`input_${d.v}`);if(i)i.value=counts[d.v];updateSubtotal(d.v);});updateTotal();}
+function buildRow(denom){
+  const row=document.createElement('div');row.className=`denom-row ${denom.type}`;
+  row.innerHTML=`<span class="denom-badge">${denom.l}</span><span class="denom-name">${denom.type==='coin'?'硬貨':'紙幣'}</span><button class="btn-count" onclick="setCount(${denom.v},counts[${denom.v}]-1)">－</button><input id="input_${denom.v}" class="count-input" type="number" min="0" value="0" onchange="setCount(${denom.v},parseInt(this.value))" onkeydown="if(event.key==='ArrowUp'){setCount(${denom.v},counts[${denom.v}]+1);event.preventDefault()}if(event.key==='ArrowDown'){setCount(${denom.v},counts[${denom.v}]-1);event.preventDefault()}"><button class="btn-count" onclick="setCount(${denom.v},counts[${denom.v}]+1)">＋</button><span class="subtotal" id="sub_${denom.v}">= ¥0</span>`;
+  return row;
+}
+function renderDenoms(){
+  document.getElementById('coinGrid').innerHTML='';document.getElementById('billGrid').innerHTML='';
+  COINS.forEach(d=>document.getElementById('coinGrid').appendChild(buildRow({...d,type:'coin'})));
+  BILLS.forEach(d=>document.getElementById('billGrid').appendChild(buildRow({...d,type:'bill'})));
+}
+function saveSnapshot(){
+  const total=calcTotal(),now=new Date(),history=getHistory();
+  history.unshift({time:now.toISOString(),total,counts:{...counts}});
+  if(history.length>50)history.pop();
+  localStorage.setItem('circle_cash_history',JSON.stringify(history));
+  persist();document.getElementById('savedAt').textContent='最終保存: '+formatDate(now);
+  showToast('💾 保存しました（合計 ¥'+formatYen(total)+'）');renderHistory();addAudit('現金保存',`合計¥${formatYen(total)}`);
+}
+function resetAll(){if(!confirm('全ての枚数を0にリセットしますか？'))return;ALL_DENOMS.forEach(d=>counts[d.v]=0);syncInputs();persist();showToast('🗑 リセットしました');}
+function getHistory(){try{return JSON.parse(localStorage.getItem('circle_cash_history')||'[]');}catch{return[];}}
+function toggleHistory(){const p=document.getElementById('historyPanel');p.classList.toggle('open');if(p.classList.contains('open'))renderHistory();}
+function renderHistory(){const list=document.getElementById('historyList');const h=getHistory();if(!h.length){list.innerHTML='<div class="history-empty">保存履歴がありません</div>';return;}list.innerHTML=h.map(e=>`<div class="history-item"><div class="hi-time">${formatDate(new Date(e.time))}</div><div class="hi-total">¥${formatYen(e.total)}</div></div>`).join('');}
+function clearHistory(){if(!confirm('保存履歴を全て削除しますか？'))return;localStorage.removeItem('circle_cash_history');renderHistory();showToast('履歴を削除しました');}
+
+// ===== DENOM CALC =====
+let dcMode='min';
+function toggleDenomCalc(){const p=document.getElementById('denomCalcPanel');p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block')calcDenom();}
+function setDcMode(m,btn){dcMode=m;document.querySelectorAll('#denomCalcPanel .filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');calcDenom();}
+function calcDenom(){
+  const amt=parseInt(document.getElementById('denomCalcInput').value)||0;
+  const el=document.getElementById('denomCalcResult');
+  if(!amt||amt<0){el.innerHTML='';return;}
+  const denoms=[...ALL_DENOMS].sort((a,b)=>b.v-a.v);
+  let remaining=amt,parts=[];
+  if(dcMode==='min'){
+    for(const d of denoms){const n=Math.floor(remaining/d.v);if(n>0){parts.push(`${d.l}×${n}`);remaining-=d.v*n;}}
+  }else{
+    for(const d of denoms){const avail=counts[d.v]||0;const n=Math.min(avail,Math.floor(remaining/d.v));if(n>0){parts.push(`${d.l}×${n}`);remaining-=d.v*n;}}
+  }
+  if(remaining>0){el.innerHTML=`<span style="color:var(--danger)">¥${formatYen(amt)} を${dcMode==='stock'?'手持ちの金種では':''}ちょうど作れません（不足: ¥${formatYen(remaining)}）</span>`;}
+  else{el.innerHTML=`<strong>¥${formatYen(amt)}</strong> → <span style="color:var(--accent)">${parts.join('、') || 'なし'}</span>`;}
+}
+
+// ===== BANK TAB =====
+function onBankBalanceChange(){bankBalance=Math.max(0,parseInt(document.getElementById('bankBalanceInput').value)||0);persist();}
+function setFilter(f,btn){currentFilter=f;searchActive=false;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTxList();document.getElementById('searchPanel').classList.remove('open');}
+function toggleSearch(btn){document.getElementById('searchPanel').classList.toggle('open');btn.classList.toggle('active');updateCatFilter();}
+function getFilteredTx(){
+  let list=transactions.filter(tx=>{
+    if(currentFilter==='income')return tx.type==='income';
+    if(currentFilter==='payment')return tx.type==='payment';
+    if(currentFilter==='pending')return tx.status==='pending';
+    return true;
+  });
+  if(searchActive){
+    const{text,cat,from,to,min,max,account}=searchFilters;
+    if(text)list=list.filter(t=>t.summary?.includes(text)||t.payee?.includes(text));
+    if(cat)list=list.filter(t=>t.category===cat);
+    if(from)list=list.filter(t=>t.date>=from);
+    if(to)list=list.filter(t=>t.date<=to);
+    if(min)list=list.filter(t=>t.amount>=parseInt(min));
+    if(max)list=list.filter(t=>t.amount<=parseInt(max));
+    if(account)list=list.filter(t=>t.account===account);
+  }
+  return list.sort((a,b)=>b.date.localeCompare(a.date));
+}
+function applySearch(){
+  searchActive=true;
+  searchFilters={text:document.getElementById('srchText').value.trim(),cat:document.getElementById('srchCat').value,from:document.getElementById('srchFrom').value,to:document.getElementById('srchTo').value,min:document.getElementById('srchMin').value,max:document.getElementById('srchMax').value,account:document.getElementById('srchAccount').value};
+  renderTxList();
+}
+function clearSearch(){['srchText','srchCat','srchFrom','srchTo','srchMin','srchMax','srchAccount'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});searchActive=false;searchFilters={};renderTxList();}
+function updateCatFilter(){const sel=document.getElementById('srchCat');sel.innerHTML='<option value="">すべて</option>'+categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');}
+function updateSummary(){
+  const calc=(t,s)=>transactions.filter(x=>x.type===t&&x.status===s).reduce((a,x)=>a+x.amount,0);
+  document.getElementById('sum-income-done').textContent='¥'+formatYen(calc('income','done'));
+  document.getElementById('sum-income-pending').textContent='¥'+formatYen(calc('income','pending'));
+  document.getElementById('sum-payment-done').textContent='¥'+formatYen(calc('payment','done'));
+  document.getElementById('sum-payment-pending').textContent='¥'+formatYen(calc('payment','pending'));
+}
+function renderTxList(){
+  const list=document.getElementById('txList');const filtered=getFilteredTx();
+  if(!filtered.length){list.innerHTML='<div class="tx-empty">取引がありません<br><small>＋ボタンで追加できます</small></div>';updateSummary();return;}
+  const canEdit=userRole!=='viewer';
+  list.innerHTML=filtered.map(tx=>{
+    const isDone=tx.status==='done',isInc=tx.type==='income';
+    const stCls=isDone?(isInc?'done-income':'done-payment'):(isInc?'pending-income':'pending-payment');
+    const stLbl=isDone?(isInc?'入金済み':'支払済み'):(isInc?'未入金':'未払い');
+    const catTag=tx.category?`<span style="color:var(--accent);margin-left:3px">#${esc(tx.category)}</span>`:'';
+    const recIcon=tx.receipt?' 📷':'';
+    const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx('${tx.id}')">編集</button><button class="tx-del-btn" onclick="deleteTx('${tx.id}')">削除</button>${tx.receipt?`<button class="tx-rec-btn" onclick="showReceipt('${tx.id}')">📷</button>`:''}`:'';
+    return `<div class="tx-item"><div><span class="tx-type-badge ${tx.type}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}${recIcon}</div><div class="tx-meta">${tx.date}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div><div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tx.type}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus('${tx.id}')`:'void(0)'}">${stLbl}</button></div></div>`;
+  }).join('');
+  updateSummary();
+}
+function toggleTxStatus(id){
+  const tx=transactions.find(t=>t.id===id);if(!tx||userRole==='viewer')return;
+  const wasDone=tx.status==='done';tx.status=wasDone?'pending':'done';
+  if(!wasDone&&!tx.applied){if(tx.account==='通帳'){bankBalance=Math.max(0,bankBalance+(tx.type==='income'?tx.amount:-tx.amount));document.getElementById('bankBalanceInput').value=bankBalance;}tx.applied=true;}
+  else if(wasDone&&tx.applied){if(tx.account==='通帳'){bankBalance=Math.max(0,bankBalance-(tx.type==='income'?tx.amount:-tx.amount));document.getElementById('bankBalanceInput').value=bankBalance;}tx.applied=false;}
+  persist();renderTxList();addAudit('ステータス変更',`${tx.summary} → ${tx.status}`);
+}
+function deleteTx(id){
+  if(!confirm('この取引を削除しますか？')||userRole==='viewer')return;
+  const tx=transactions.find(t=>t.id===id);transactions=transactions.filter(t=>t.id!==id);
+  persist();renderTxList();showToast('削除しました');if(tx)addAudit('取引削除',tx.summary);
+}
+
+// ===== TX MODAL =====
+function openModal(id=null){
+  if(userRole==='viewer'){showToast('閲覧のみ権限です');return;}
+  editingId=id;const tx=id?transactions.find(t=>t.id===id):null;
+  document.getElementById('modalTitle').textContent=id?'取引を編集':'取引を追加';
+  document.getElementById('formDate').value=tx?tx.date:todayStr();
+  document.getElementById('formSummary').value=tx?tx.summary:'';
+  document.getElementById('formPayee').value=tx?tx.payee:'';
+  document.getElementById('formAmount').value=tx?tx.amount:'';
+  setType(tx?tx.type:'income');setStatus(tx?tx.status:'done');setAccount(tx?tx.account:'現金');
+  receiptData=tx?.receipt||null;
+  const thumb=document.getElementById('receiptThumb');
+  if(tx?.receipt){thumb.src=tx.receipt;thumb.style.display='block';document.getElementById('receiptFilename').textContent='領収書あり';document.getElementById('receiptClearBtn').style.display='';}
+  else{thumb.style.display='none';document.getElementById('receiptFilename').textContent='';document.getElementById('receiptClearBtn').style.display='none';}
+  renderCatChips(tx?.category||'');
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');receiptData=null;}
+function closeModalOnBg(e){if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('open');}
+function setType(t){
+  modalType=t;
+  document.getElementById('typeIncome').className='type-toggle-btn'+(t==='income'?' active-income':'');
+  document.getElementById('typePayment').className='type-toggle-btn'+(t==='payment'?' active-payment':'');
+  document.getElementById('formPayeeLabel').textContent=t==='income'?'受取先':'支払先';
+  document.getElementById('statusLabel').textContent=t==='income'?'ステータス（入金）':'ステータス（支払い）';
+  setStatus(modalStatus);
+}
+function setStatus(s){
+  modalStatus=s;const isInc=modalType==='income';
+  const dBtn=document.getElementById('statusDone'),pBtn=document.getElementById('statusPending');
+  dBtn.textContent=isInc?'入金済み':'支払済み';pBtn.textContent=isInc?'未入金':'未払い';
+  dBtn.className='status-option'+(s==='done'?` sel-done-${isInc?'income':'payment'}`:'');
+  pBtn.className='status-option'+(s==='pending'?` sel-pending-${isInc?'income':'payment'}`:'');
+}
+function setAccount(a){
+  modalAccount=a;
+  ['accCash','accBank','accOther'].forEach(id=>document.getElementById(id).classList.remove('sel'));
+  document.getElementById(a==='現金'?'accCash':a==='通帳'?'accBank':'accOther').classList.add('sel');
+}
+function renderCatChips(sel){document.getElementById('formCatChips').innerHTML=categories.map(c=>`<span class="cat-chip${c===sel?' selected':''}" onclick="this.parentElement.querySelectorAll('.cat-chip').forEach(x=>x.classList.remove('selected'));this.classList.add('selected')">${esc(c)}</span>`).join('');}
+function getSelectedCat(){const el=document.querySelector('#formCatChips .cat-chip.selected');return el?el.textContent:'';}
+function saveTx(){
+  if(userRole==='viewer')return;
+  const summary=document.getElementById('formSummary').value.trim();
+  const amt=parseInt(document.getElementById('formAmount').value);
+  if(!summary){showToast('⚠ 摘要を入力してください');return;}
+  if(!amt||amt<=0||isNaN(amt)){showToast('⚠ 金額を入力してください');return;}
+  if(amt>MAX_AMT){showToast('⚠ 金額が上限を超えています');return;}
+  const prev=editingId?transactions.find(t=>t.id===editingId):null;
+  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:prev?.applied||false,receipt:receiptData||prev?.receipt||null,createdAt:prev?.createdAt||new Date().toISOString()};
+  if(editingId){const i=transactions.findIndex(t=>t.id===editingId);if(i>=0)transactions[i]=tx;}else transactions.unshift(tx);
+  persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');
+  addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);editingId=null;
+}
+function editTx(id){openModal(id);}
+
+// ===== RECEIPT =====
+function handleReceipt(e){
+  const file=e.target.files[0];if(!file)return;
+  const img=new Image(),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),reader=new FileReader();
+  reader.onload=ev=>{img.onload=()=>{const MAX=1280;let w=img.width,h=img.height;if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);receiptData=canvas.toDataURL('image/jpeg',0.8);const thumb=document.getElementById('receiptThumb');thumb.src=receiptData;thumb.style.display='block';document.getElementById('receiptFilename').textContent=file.name;document.getElementById('receiptClearBtn').style.display='';};img.src=ev.target.result;};reader.readAsDataURL(file);
+}
+function clearReceipt(){receiptData=null;document.getElementById('receiptThumb').style.display='none';document.getElementById('receiptFilename').textContent='';document.getElementById('receiptClearBtn').style.display='none';document.getElementById('receiptInput').value='';}
+function showReceipt(id){const tx=transactions.find(t=>t.id===id);if(!tx?.receipt)return;document.getElementById('receiptPreviewImg').src=tx.receipt;document.getElementById('receiptDialog').classList.add('open');}
+
+// ===== TAB =====
+const TAB_NAMES=['cash','bank','report','collect'];
+function switchTab(tab){
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  const idx=TAB_NAMES.indexOf(tab);if(idx>=0)document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+  const fab=document.getElementById('fab');
+  if(tab==='bank')fab.classList.add('visible');else fab.classList.remove('visible');
+  if(tab==='report'){renderReport();renderCatManager();renderBudget();renderAuditLog();}
+  if(tab==='collect')renderCollection();
+}
+
+// ===== REPORT =====
+function getPeriodRange(){
+  const now=new Date();
+  if(currentPeriod==='month')return[`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`,todayStr()];
+  if(currentPeriod==='last'){const lm=new Date(now.getFullYear(),now.getMonth()-1,1);const le=new Date(now.getFullYear(),now.getMonth(),0);return[lm.toISOString().slice(0,10),le.toISOString().slice(0,10)];}
+  if(currentPeriod==='fiscal'){const fy=now.getMonth()>=3?now.getFullYear():now.getFullYear()-1;return[`${fy}-04-01`,`${fy+1}-03-31`];}
+  if(currentPeriod==='custom')return[periodFrom||'2000-01-01',periodTo||todayStr()];
+  return['2000-01-01',todayStr()];
+}
+function setPeriod(p,btn){
+  currentPeriod=p;document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  const cdr=document.getElementById('customDateRow');
+  if(p==='custom')cdr.style.display='flex';else cdr.style.display='none';
+  renderReport();
+}
+function renderReport(){
+  const[from,to]=getPeriodRange();
+  const inPeriod=t=>t.date>=from&&t.date<=to;
+  const txPeriod=transactions.filter(inPeriod);
+  const income=txPeriod.filter(t=>t.type==='income'&&t.status==='done').reduce((s,t)=>s+t.amount,0);
+  const payment=txPeriod.filter(t=>t.type==='payment'&&t.status==='done').reduce((s,t)=>s+t.amount,0);
+  const balance=income-payment;
+  document.getElementById('reportSummary').innerHTML=`
+    <div><div style="font-size:.72rem;color:var(--text2)">入金合計</div><div style="font-size:1.1rem;font-weight:800;color:var(--income)">¥${formatYen(income)}</div></div>
+    <div><div style="font-size:.72rem;color:var(--text2)">支出合計</div><div style="font-size:1.1rem;font-weight:800;color:var(--payment)">¥${formatYen(payment)}</div></div>
+    <div><div style="font-size:.72rem;color:var(--text2)">収支差額</div><div style="font-size:1.1rem;font-weight:800;color:${balance>=0?'var(--income)':'var(--payment)'}">¥${formatYen(balance)}</div></div>`;
+  renderDonut(txPeriod);renderBar(txPeriod,from,to);renderBudget();
+}
+function renderDonut(txPeriod){
+  if(typeof Chart==='undefined'){document.getElementById('donutChart').parentElement.innerHTML+='<p style="text-align:center;color:var(--text2);font-size:.8rem;margin-top:8px">グラフはインターネット接続時に表示されます</p>';return;}
+  const payments=txPeriod.filter(t=>t.type==='payment'&&t.status==='done');
+  const catMap={};payments.forEach(t=>{const k=t.category||'未分類';catMap[k]=(catMap[k]||0)+t.amount;});
+  const labels=Object.keys(catMap),data=Object.values(catMap);
+  const colors=['#2d6a4f','#40916c','#52b788','#74c69d','#95d5b2','#b7e4c7','#d8f3dc','#1b4332'];
+  const ctx=document.getElementById('donutChart').getContext('2d');
+  if(donutChart)donutChart.destroy();
+  donutChart=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:1}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}}}}});
+}
+function renderBar(txPeriod,from,to){
+  if(typeof Chart==='undefined')return;
+  const months={};let cur=new Date(from+'T00:00:00');const end=new Date(to+'T00:00:00');
+  while(cur<=end){const key=`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`;if(!months[key])months[key]={in:0,out:0};cur.setMonth(cur.getMonth()+1);}
+  txPeriod.filter(t=>t.status==='done').forEach(t=>{const k=t.date.slice(0,7);if(months[k]){if(t.type==='income')months[k].in+=t.amount;else months[k].out+=t.amount;}});
+  const labels=Object.keys(months).sort();
+  const ctx=document.getElementById('barChart').getContext('2d');
+  if(barChart)barChart.destroy();
+  barChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'入金',data:labels.map(k=>months[k].in),backgroundColor:'rgba(39,103,73,.7)'},{label:'支出',data:labels.map(k=>months[k].out),backgroundColor:'rgba(155,35,53,.7)'}]},options:{responsive:true,plugins:{legend:{labels:{boxWidth:12}}},scales:{y:{ticks:{callback:v=>'¥'+formatYen(v)}}}}});
+}
+
+// ===== CATEGORY MANAGER =====
+function renderCatManager(){
+  const el=document.getElementById('catManagerList');
+  if(!el)return;
+  el.innerHTML=categories.map((c,i)=>`<div class="cat-manager-row"><span style="flex:1">${esc(c)}</span><button class="btn-sm" onclick="deleteCat(${i})" style="color:var(--danger)">削除</button></div>`).join('');
+  const sel=document.getElementById('budgetCatSel');if(sel)sel.innerHTML=categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+}
+function addCategory(){
+  const inp=document.getElementById('newCatInput');const name=inp.value.trim();
+  if(!name||categories.includes(name)){showToast('⚠ カテゴリ名が無効または重複しています');return;}
+  categories.push(name);inp.value='';persist();renderCatManager();showToast('カテゴリを追加しました');
+}
+function deleteCat(i){if(!confirm(`「${categories[i]}」を削除しますか？`))return;categories.splice(i,1);persist();renderCatManager();showToast('削除しました');}
+
+// ===== BUDGET =====
+function renderBudget(){
+  const el=document.getElementById('budgetList');if(!el)return;
+  const[from,to]=getPeriodRange();
+  const items=Object.entries(budgets);
+  if(!items.length){el.innerHTML='<div style="color:var(--text2);font-size:.8rem;text-align:center;padding:10px">予算が設定されていません</div>';return;}
+  el.innerHTML=items.map(([cat,limit])=>{
+    const spent=transactions.filter(t=>t.category===cat&&t.type==='payment'&&t.status==='done'&&t.date>=from&&t.date<=to).reduce((s,t)=>s+t.amount,0);
+    const pct=Math.min(100,limit?Math.round(spent/limit*100):0);const over=spent>limit;
+    return `<div class="budget-item"><div class="budget-row"><span style="font-weight:600">${esc(cat)}</span><span style="${over?'color:var(--danger)':''}">¥${formatYen(spent)} / ¥${formatYen(limit)}</span></div><div class="budget-bar"><div class="budget-fill${over?' over':''}" style="width:${pct}%"></div></div></div>`;
+  }).join('');
+}
+function setBudget(){
+  const cat=document.getElementById('budgetCatSel').value;
+  const amt=parseInt(document.getElementById('budgetAmt').value);
+  if(!cat||!amt||amt<=0){showToast('⚠ カテゴリと金額を入力してください');return;}
+  budgets[cat]=amt;persist();renderBudget();showToast('予算を設定しました');
+}
+
+// ===== EXPORT / IMPORT =====
+function txToRow(t){return[t.date,t.type==='income'?'入金':'支払い',t.summary||'',t.payee||'',t.amount,t.status==='done'?'済み':'未処理',t.category||'',t.account||'',t.id];}
+function exportCSV(){
+  const BOM='﻿';
+  const header='日付,種別,摘要,支払先,金額,状態,カテゴリ,口座,ID\n';
+  const rows=transactions.map(t=>txToRow(t).map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([BOM+header+rows],{type:'text/csv;charset=utf-8'});
+  dlBlob(blob,'transactions.csv');addAudit('CSVエクスポート',`${transactions.length}件`);
+}
+function exportExcel(){
+  if(typeof XLSX==='undefined'){showToast('⚠ ライブラリ読込中。少し待って再試行してください');return;}
+  const wb=XLSX.utils.book_new();
+  const txData=[['日付','種別','摘要','支払先','金額','状態','カテゴリ','口座','ID'],...transactions.map(txToRow)];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(txData),'取引');
+  const catData=[['カテゴリ'],...categories.map(c=>[c])];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(catData),'カテゴリ');
+  const budgetData=[['カテゴリ','予算'],...Object.entries(budgets)];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(budgetData),'予算');
+  XLSX.writeFile(wb,'circle_data.xlsx');addAudit('Excelエクスポート',`${transactions.length}件`);
+}
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(buildPayload(),null,2)],{type:'application/json'});
+  dlBlob(blob,'circle_backup.json');addAudit('JSONエクスポート','');
+}
+function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+function importFile(e){
+  const file=e.target.files[0];if(!file)return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      if(ext==='json'){
+        const data=JSON.parse(ev.target.result);
+        if(!confirm(`${(data.transactions||[]).length}件の取引をインポートしますか？\n（重複は自動スキップされます）`))return;
+        mergeImport(data.transactions||[]);
+      }else if(ext==='csv'){
+        const lines=ev.target.result.replace(/^﻿/,'').split('\n').slice(1).filter(Boolean);
+        const txs=lines.map(l=>{const cols=l.match(/(".*?"|[^,]+)/g)||[];const get=i=>(cols[i]||'').replace(/^"|"$/g,'').replace(/""/g,'"');return{id:get(8)||crypto.randomUUID(),date:get(0),type:get(1)==='入金'?'income':'payment',summary:get(2),payee:get(3),amount:parseInt(get(4))||0,status:get(5)==='済み'?'done':'pending',category:get(6),account:get(7)||'未設定',applied:get(5)==='済み',createdAt:new Date().toISOString()};});
+        if(!confirm(`${txs.length}件の取引をインポートしますか？`))return;
+        mergeImport(txs);
+      }else if(ext==='xlsx'){
+        const wb=XLSX.read(ev.target.result,{type:'binary'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}).slice(1);
+        const txs=rows.map(r=>({id:r[8]||crypto.randomUUID(),date:String(r[0]||''),type:r[1]==='入金'?'income':'payment',summary:String(r[2]||''),payee:String(r[3]||''),amount:parseInt(r[4])||0,status:r[5]==='済み'?'done':'pending',category:String(r[6]||''),account:String(r[7]||'未設定'),applied:r[5]==='済み',createdAt:new Date().toISOString()}));
+        if(!confirm(`${txs.length}件をインポートしますか？`))return;
+        mergeImport(txs);
+      }
+    }catch(err){showToast('⚠ ファイルの読み込みに失敗しました');}
+  };
+  if(ext==='xlsx')reader.readAsBinaryString(file);else reader.readAsText(file,'utf-8');
+  e.target.value='';
+}
+function mergeImport(txs){
+  const existing=new Set(transactions.map(t=>`${t.date}|${t.amount}|${t.summary}`));
+  let added=0;
+  txs.forEach(t=>{const key=`${t.date}|${t.amount}|${t.summary}`;if(!existing.has(key)){transactions.push(migrateTx(t));existing.add(key);added++;}});
+  persist();renderTxList();showToast(`✅ ${added}件追加（${txs.length-added}件スキップ）`);addAudit('インポート',`${added}件追加`);
+}
+// ===== AUDIT LOG =====
+function addAudit(action,detail){
+  auditLog.unshift({ts:new Date().toISOString(),action,detail,device:deviceName||DEVICE_ID.slice(0,8),user:userRole});
+  if(auditLog.length>MAX_AUDIT)auditLog.length=MAX_AUDIT;
+  if(document.getElementById('tab-report').classList.contains('active'))renderAuditLog();
+}
+function renderAuditLog(){
+  const el=document.getElementById('auditLogList');if(!el)return;
+  if(!auditLog.length){el.innerHTML='<div style="padding:12px;text-align:center;color:var(--text2);font-size:.8rem">ログがありません</div>';return;}
+  el.innerHTML=auditLog.slice(0,100).map(a=>`<div class="audit-item"><span>${formatDate(new Date(a.ts))} [${esc(a.action)}]</span><span style="color:var(--text2)">${esc(a.detail||'')}</span></div>`).join('');
+}
+function exportAudit(){
+  const BOM='﻿';const header='日時,操作,詳細,デバイス,ロール\n';
+  const rows=auditLog.map(a=>[formatDate(new Date(a.ts)),a.action,a.detail||'',a.device||'',a.user||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  dlBlob(new Blob([BOM+header+rows],{type:'text/csv;charset=utf-8'}),'audit_log.csv');
+}
+
+// ===== COLLECTION TAB =====
+function getMembers(){return(collections.find(c=>c._type==='members')||{list:[]}).list;}
+function saveMembers(list){let rec=collections.find(c=>c._type==='members');if(!rec){rec={_type:'members',list:[]};collections.push(rec);}rec.list=list;persist();}
+function getProjects(){return collections.filter(c=>!c._type);}
+function renderCollection(){
+  const members=getMembers();
+  const el=document.getElementById('memberList');if(!el)return;
+  el.innerHTML=members.map((m,i)=>`<div class="member-chip"><span>${esc(m)}</span><button class="member-del" onclick="deleteMember(${i})">✕</button></div>`).join('');
+  const projs=getProjects();
+  const pEl=document.getElementById('projectList');if(!pEl)return;
+  if(!projs.length){pEl.innerHTML='<div style="text-align:center;color:var(--text2);font-size:.82rem;padding:20px">集金プロジェクトがありません</div>';return;}
+  pEl.innerHTML=projs.map((p,pi)=>{
+    const paid=members.filter(m=>p.paid?.includes(m));
+    const unpaid=members.filter(m=>!p.paid?.includes(m));
+    const total=members.length*p.amount,collected=paid.length*p.amount;
+    return `<div class="project-card">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+          <div class="project-title">${esc(p.name)}</div>
+          <div class="project-meta">一人 ¥${formatYen(p.amount)}${p.deadline?` · 締切: ${p.deadline}`:''}${p.memo?` · ${esc(p.memo)}`:''}</div>
+          <div style="font-size:.78rem;margin-bottom:8px">集金: ¥${formatYen(collected)} / ¥${formatYen(total)}（${paid.length}/${members.length}名）</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn-sm" onclick="copyUnpaid(${pi})" title="未払いリストコピー">📋</button>
+          <button class="btn-sm" onclick="deleteProject(${pi})" style="color:var(--danger)">削除</button>
+        </div>
+      </div>
+      <div class="project-member-row">${members.map(m=>`<span class="pm-chip${p.paid?.includes(m)?' paid':''}" onclick="togglePaid(${pi},'${esc(m)}')">${esc(m)}</span>`).join('')}</div>
+    </div>`;
+  }).join('');
+}
+function addMember(){const inp=document.getElementById('newMemberInput');const name=inp.value.trim();if(!name)return;const list=getMembers();if(list.includes(name)){showToast('既に追加されています');return;}list.push(name);saveMembers(list);renderCollection();inp.value='';showToast('メンバーを追加しました');}
+function deleteMember(i){const list=getMembers();list.splice(i,1);saveMembers(list);renderCollection();}
+let collectEditIdx=null;
+function openCollectModal(idx=null){
+  collectEditIdx=idx;
+  const p=idx!==null?getProjects()[idx]:null;
+  document.getElementById('cpName').value=p?p.name:'';
+  document.getElementById('cpAmount').value=p?p.amount:'';
+  document.getElementById('cpDeadline').value=p?p.deadline:'';
+  document.getElementById('cpMemo').value=p?p.memo:'';
+  document.getElementById('collectModal').classList.add('open');
+}
+function closeCollectModal(){document.getElementById('collectModal').classList.remove('open');}
+function saveCollectProject(){
+  const name=document.getElementById('cpName').value.trim();
+  const amount=parseInt(document.getElementById('cpAmount').value)||0;
+  if(!name||!amount){showToast('⚠ 名称と金額を入力してください');return;}
+  const proj={name,amount,deadline:document.getElementById('cpDeadline').value,memo:document.getElementById('cpMemo').value.trim(),paid:[],createdAt:new Date().toISOString()};
+  if(collectEditIdx!==null){const projs=getProjects();const origIdx=collections.indexOf(projs[collectEditIdx]);if(origIdx>=0){proj.paid=collections[origIdx].paid||[];collections[origIdx]=proj;}}
+  else collections.push(proj);
+  persist();renderCollection();closeCollectModal();showToast('保存しました');
+}
+function deleteProject(pi){if(!confirm('このプロジェクトを削除しますか？'))return;const projs=getProjects();const idx=collections.indexOf(projs[pi]);if(idx>=0)collections.splice(idx,1);persist();renderCollection();}
+function togglePaid(pi,member){
+  const projs=getProjects();const p=projs[pi];if(!p)return;
+  if(!p.paid)p.paid=[];
+  const wasPaid=p.paid.includes(member);
+  if(wasPaid){p.paid=p.paid.filter(m=>m!==member);}
+  else{
+    p.paid.push(member);
+    if(confirm(`${member}の支払いを取引として記録しますか？`)){
+      transactions.unshift({id:crypto.randomUUID(),type:'income',summary:`${p.name}（${member}）`,payee:member,amount:p.amount,status:'done',date:todayStr(),account:'現金',category:'部費',applied:false,createdAt:new Date().toISOString()});
+      renderTxList();addAudit('集金記録',`${p.name} ${member} ¥${formatYen(p.amount)}`);
+    }
+  }
+  persist();renderCollection();
+}
+function copyUnpaid(pi){
+  const projs=getProjects();const p=projs[pi];if(!p)return;
+  const members=getMembers();const unpaid=members.filter(m=>!p.paid?.includes(m));
+  if(!unpaid.length){showToast('全員支払い済みです');return;}
+  navigator.clipboard.writeText(unpaid.join('、')).then(()=>showToast('未払いリストをコピーしました')).catch(()=>showToast(unpaid.join('、')));
+}
+
+// ===== ENCRYPTED BACKUP =====
+async function deriveKey(pass,salt){
+  const keyMat=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},keyMat,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+function exportEncrypted(){backupEncFile=null;document.getElementById('backupModalTitle').textContent='暗号化バックアップ';document.getElementById('backupImportSection').style.display='none';document.getElementById('backupActionBtn').textContent='ダウンロード';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');}
+function importEncrypted(e){backupEncFile=e.target.files[0];if(!backupEncFile)return;document.getElementById('backupModalTitle').textContent='バックアップを復元';document.getElementById('backupImportSection').style.display='block';document.getElementById('backupActionBtn').textContent='復元';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');e.target.value='';}
+function closeBackupModal(){document.getElementById('backupModal').classList.remove('open');}
+function setRestoreMode(m){restoreMode=m;document.getElementById('mergeMode').classList.toggle('sel',m==='merge');document.getElementById('replaceMode').classList.toggle('sel',m==='replace');}
+async function doBackupAction(){
+  const pass=document.getElementById('backupPass').value;
+  if(pass.length<1){showToast('⚠ パスフレーズを入力してください');return;}
+  if(backupEncFile){
+    try{
+      const ab=await backupEncFile.arrayBuffer();const bytes=new Uint8Array(ab);
+      const salt=bytes.slice(0,16),iv=bytes.slice(16,28),cipher=bytes.slice(28);
+      const key=await deriveKey(pass,salt);
+      const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);
+      const data=JSON.parse(new TextDecoder().decode(plain));
+      if(restoreMode==='replace'){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];}
+      mergeImport(data.transactions||[]);
+      if(data.categories)categories=[...new Set([...categories,...data.categories])];
+      Object.assign(budgets,data.budgets||{});
+      persist();renderCatManager();renderBudget();closeBackupModal();showToast('✅ 復元しました');addAudit('バックアップ復元',restoreMode);
+    }catch{showToast('⚠ 復元に失敗しました（パスフレーズが違う可能性があります）');}
+  }else{
+    try{
+      const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+      const key=await deriveKey(pass,salt);
+      const plain=new TextEncoder().encode(JSON.stringify(buildPayload()));
+      const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain);
+      const combined=new Uint8Array(salt.length+iv.length+cipher.byteLength);
+      combined.set(salt);combined.set(iv,salt.length);combined.set(new Uint8Array(cipher),salt.length+iv.length);
+      dlBlob(new Blob([combined],{type:'application/octet-stream'}),`circle_backup_${todayStr()}.enc`);
+      closeBackupModal();showToast('✅ 暗号化バックアップを作成しました');addAudit('暗号化バックアップ作成','');
+    }catch{showToast('⚠ バックアップ作成に失敗しました');}
+  }
+}
+
+// ===== CONFLICT =====
+function showConflict(sv){conflictServerVersion=sv;document.getElementById('conflictDialog').classList.add('open');}
+async function resolveConflict(mode){
+  document.getElementById('conflictDialog').classList.remove('open');
+  if(mode==='reload'){await loadData();showToast('🔄 サーバーデータを読み込みました');}
+  else{lastServerVersion=conflictServerVersion;await persist();showToast('⚠ 強制上書きしました');}
+}
+
+// ===== DEVICE NAME =====
+function promptDeviceName(){
+  const name=prompt('このデバイスの名前を入力してください（操作ログに記録されます）','');
+  if(name){deviceName=name.trim()||'';localStorage.setItem('circle_dname',deviceName);}
+}
+
+// ===== MULTI USER =====
+function applyRole(){
+  const isAdmin=userRole==='admin';
+  const userBtn=document.getElementById('userBtn');
+  if(userBtn)userBtn.style.display=isAdmin?'':'none';
+}
+async function openUserMgr(){
+  document.getElementById('userMgrModal').classList.add('open');
+  if(!getToken())return;
+  try{
+    const r=await fetch('/api/users',{headers:{'Authorization':`Bearer ${authToken}`}});
+    if(!r.ok)return;const users=await r.json();
+    document.getElementById('userList').innerHTML=users.length?users.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>${esc(u.username)} <span style="color:var(--text2);font-size:.75rem">${u.role}</span></span><button class="btn-sm" onclick="deleteUser('${esc(u.username)}')" style="color:var(--danger)">削除</button></div>`).join(''):'<div style="color:var(--text2);font-size:.82rem">ユーザーが登録されていません</div>';
+  }catch{}
+}
+async function addUser(){
+  const username=document.getElementById('newUsername').value.trim();
+  const role=document.getElementById('newUserRole').value;
+  if(!username){showToast('⚠ ユーザー名を入力してください');return;}
+  if(!getToken())return;
+  try{
+    const r=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${authToken}`},body:JSON.stringify({username,role})});
+    if(r.ok){document.getElementById('newUsername').value='';openUserMgr();showToast('ユーザーを追加しました');}
+  }catch{showToast('⚠ 追加に失敗しました');}
+}
+async function deleteUser(username){
+  if(!confirm(`${username} を削除しますか？`))return;
+  try{
+    await fetch(`/api/users/${encodeURIComponent(username)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${authToken}`}});
+    openUserMgr();showToast('削除しました');
+  }catch{showToast('⚠ 削除に失敗しました');}
+}
+
+// ===== DARK MODE =====
+function toggleTheme(){
+  const html=document.documentElement;
+  const isDark=html.getAttribute('data-theme')==='dark';
+  const next=isDark?'light':'dark';
+  html.setAttribute('data-theme',next);localStorage.setItem('circle_theme',next);
+  document.getElementById('themeBtn').textContent=next==='dark'?'☀':'🌙';
+}
+function initTheme(){
+  const saved=localStorage.getItem('circle_theme');
+  const preferred=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+  const theme=saved||preferred;
+  document.documentElement.setAttribute('data-theme',theme);
+  document.getElementById('themeBtn').textContent=theme==='dark'?'☀':'🌙';
+}
+
+// ===== PWA =====
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{});});}
+
+// ===== STARTUP =====
+initTheme();
+renderDenoms();
+initSyncBanner();
+if(authToken){
+  document.getElementById('lockScreen').classList.add('hidden');
+  applyRole();
+  loadData().then(()=>startPolling()).catch(()=>{handleAuthFailure();});
+}
+</script>
+</body>
+</html>
