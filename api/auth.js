@@ -20,8 +20,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'pin_required' });
   }
 
-  const correctPin = process.env.CIRCLE_PIN || '0521';
-  if (sha256(pin) !== sha256(correctPin)) {
+  const correctPin = (process.env.CIRCLE_PIN || '0521').trim();
+  if (sha256(pin.trim()) !== sha256(correctPin)) {
     await redis.lpush('audit:auth_fail', JSON.stringify({
       at: new Date().toISOString(),
       ip: req.headers['x-forwarded-for'] || 'unknown'
