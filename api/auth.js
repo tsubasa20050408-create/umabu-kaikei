@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'pin_required' });
   }
 
-  const correctPin = (process.env.CIRCLE_PIN || '0521').trim();
+  const correctPin = '0521';
   if (pin.trim() !== correctPin) {
     return res.status(401).json({ error: 'invalid_pin' });
   }
