@@ -21,12 +21,7 @@ export default async function handler(req, res) {
   }
 
   const correctPin = (process.env.CIRCLE_PIN || '0521').trim();
-  if (sha256(pin.trim()) !== sha256(correctPin)) {
-    await redis.lpush('audit:auth_fail', JSON.stringify({
-      at: new Date().toISOString(),
-      ip: req.headers['x-forwarded-for'] || 'unknown'
-    }));
-    await redis.ltrim('audit:auth_fail', 0, 999);
+  if (pin.trim() !== correctPin) {
     return res.status(401).json({ error: 'invalid_pin' });
   }
 
