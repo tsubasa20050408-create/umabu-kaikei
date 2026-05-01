@@ -591,7 +591,25 @@ async function persist(){
 async function loadData(){
   try{
     const{data,version}=await apiLoad();
-    lastServerVersion=version||0;applyData(data||{});
+    lastServerVersion=version||0;
+    // Redisが空でlocalStorageに旧データがある場合は自動マイグレーション
+    const isEmpty=!data||(!data.transactions?.length&&!Object.values(data.counts||{}).some(v=>v>0)&&!data.bankBalance);
+    if(isEmpty){
+      const cached=localStorage.getItem('circle_data');
+      if(cached){
+        try{
+          const local=JSON.parse(cached);
+          const hasData=local.transactions?.length||Object.values(local.counts||{}).some(v=>v>0)||local.bankBalance;
+          if(hasData){
+            applyData(local);
+            await persist();
+            showToast('✅ ローカルデータをクラウドに移行しました');
+            return;
+          }
+        }catch{}
+      }
+    }
+    applyData(data||{});
   }catch(e){
     if(e.message!=='unauthorized'){
       const cached=localStorage.getItem('circle_data');
