@@ -466,6 +466,7 @@ const DEVICE_ID = localStorage.getItem('circle_did') || (()=>{const id=crypto.ra
 const COINS=[{v:1,l:'1円'},{v:5,l:'5円'},{v:10,l:'10円'},{v:50,l:'50円'},{v:100,l:'100円'},{v:500,l:'500円'}];
 const BILLS=[{v:1000,l:'千円'},{v:5000,l:'五千円'},{v:10000,l:'一万円'}];
 const ALL_DENOMS=[...COINS.map(d=>({...d,type:'coin'})),...BILLS.map(d=>({...d,type:'bill'}))];
+const DENOM_LABEL=Object.fromEntries(ALL_DENOMS.map(d=>[d.v,d.l]));
 const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽費','助成金','その他'];
 const MAX_AMT=9999999999, MAX_AUDIT=10000;
 
@@ -491,6 +492,8 @@ const todayStr=()=>new Date().toISOString().slice(0,10);
 function formatDate(d){const dt=typeof d==='string'?new Date(d):d;return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 async function sha256(str){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+function calcMinCoinsFrom(amount,tmpC){const ds=[...ALL_DENOMS].sort((a,b)=>b.v-a.v);let rem=amount;const bd={};for(const d of ds){if(rem<=0)break;const n=Math.min(tmpC[d.v]||0,Math.floor(rem/d.v));if(n>0){bd[d.v]=n;rem-=n*d.v;}}return rem===0?bd:null;}
+function formatBreakdown(bd){return Object.entries(bd).filter(([,n])=>n>0).sort((a,b)=>parseInt(b[0])-parseInt(a[0])).map(([v,n])=>`${DENOM_LABEL[v]||v+'円'}×${n}`).join('、');}
 
 // ===== PIN AUTH =====
 function pinInput(d){
@@ -548,6 +551,7 @@ function migrateTx(tx){
   if(!tx.account)tx.account='未設定';
   if(!tx.category)tx.category='';
   if(tx.applied===undefined)tx.applied=tx.status==='done';
+  if(tx.cashBreakdown===undefined)tx.cashBreakdown=null;
   return tx;
 }
 
@@ -741,9 +745,29 @@ function renderTxList(){
 }
 function toggleTxStatus(id){
   const tx=transactions.find(t=>t.id===id);if(!tx||userRole==='viewer')return;
-  const wasDone=tx.status==='done';tx.status=wasDone?'pending':'done';
-  if(!wasDone&&!tx.applied){if(tx.account==='通帳'){bankBalance=Math.max(0,bankBalance+(tx.type==='income'?tx.amount:-tx.amount));document.getElementById('bankBalanceInput').value=bankBalance;}tx.applied=true;}
-  else if(wasDone&&tx.applied){if(tx.account==='通帳'){bankBalance=Math.max(0,bankBalance-(tx.type==='income'?tx.amount:-tx.amount));document.getElementById('bankBalanceInput').value=bankBalance;}tx.applied=false;}
+  const wasDone=tx.status==='done';
+  if(!wasDone&&!tx.applied){
+    if(tx.account==='現金'&&tx.type==='payment'){
+      const bd=calcMinCoinsFrom(tx.amount,counts);
+      if(!bd){showToast('⚠ 現金残高が不足しています');return;}
+      if(!confirm(`¥${formatYen(tx.amount)} を現金から支払います。\n${formatBreakdown(bd)}\nを使用します。よろしいですか？`))return;
+      for(const[v,n]of Object.entries(bd))counts[parseInt(v)]-=n;
+      tx.cashBreakdown=bd;tx.applied=true;syncInputs();
+    }else if(tx.account==='通帳'){
+      bankBalance=Math.max(0,bankBalance+(tx.type==='income'?tx.amount:-tx.amount));
+      document.getElementById('bankBalanceInput').value=bankBalance;tx.applied=true;
+    }else{tx.applied=true;}
+    tx.status='done';
+  }else if(wasDone&&tx.applied){
+    if(tx.account==='現金'&&tx.cashBreakdown){
+      for(const[v,n]of Object.entries(tx.cashBreakdown))counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;
+      tx.cashBreakdown=null;tx.applied=false;syncInputs();
+    }else if(tx.account==='通帳'){
+      bankBalance=Math.max(0,bankBalance-(tx.type==='income'?tx.amount:-tx.amount));
+      document.getElementById('bankBalanceInput').value=bankBalance;tx.applied=false;
+    }else{tx.applied=false;}
+    tx.status='pending';
+  }else{tx.status=wasDone?'pending':'done';}
   persist();renderTxList();addAudit('ステータス変更',`${tx.summary} → ${tx.status}`);
 }
 function deleteTx(id){
@@ -801,7 +825,32 @@ function saveTx(){
   if(!amt||amt<=0||isNaN(amt)){showToast('⚠ 金額を入力してください');return;}
   if(amt>MAX_AMT){showToast('⚠ 金額が上限を超えています');return;}
   const prev=editingId?transactions.find(t=>t.id===editingId):null;
-  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:prev?.applied||false,receipt:receiptData||prev?.receipt||null,createdAt:prev?.createdAt||new Date().toISOString()};
+  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:false,cashBreakdown:null,receipt:receiptData||prev?.receipt||null,createdAt:prev?.createdAt||new Date().toISOString()};
+  const prevCashBd=prev?.applied&&prev.account==='現金'?prev.cashBreakdown:null;
+  const prevBank=prev?.applied&&prev.account==='通帳';
+  const needCash=tx.type==='payment'&&tx.status==='done'&&tx.account==='現金';
+  const needBank=tx.type==='payment'&&tx.status==='done'&&tx.account==='通帳';
+  if(needCash){
+    const tmpC={...counts};
+    if(prevCashBd)for(const[v,n]of Object.entries(prevCashBd))tmpC[parseInt(v)]=(tmpC[parseInt(v)]||0)+n;
+    const bd=calcMinCoinsFrom(tx.amount,tmpC);
+    if(!bd){
+      if(!confirm(`現金残高が不足しています。そのまま保存しますか？`))return;
+      if(prevCashBd)for(const[v,n]of Object.entries(prevCashBd)){counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;}
+      if(prevBank){bankBalance+=(prev.type==='income'?-prev.amount:prev.amount);document.getElementById('bankBalanceInput').value=bankBalance;}
+      syncInputs();
+    }else{
+      if(!confirm(`¥${formatYen(tx.amount)} を現金から支払います。\n${formatBreakdown(bd)}\nを使用します。よろしいですか？`))return;
+      if(prevCashBd)for(const[v,n]of Object.entries(prevCashBd)){counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;}
+      if(prevBank){bankBalance+=(prev.type==='income'?-prev.amount:prev.amount);document.getElementById('bankBalanceInput').value=bankBalance;}
+      for(const[v,n]of Object.entries(bd))counts[parseInt(v)]-=n;
+      tx.applied=true;tx.cashBreakdown=bd;syncInputs();
+    }
+  }else{
+    if(prevCashBd){for(const[v,n]of Object.entries(prevCashBd))counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;syncInputs();}
+    if(prevBank){bankBalance+=(prev.type==='income'?-prev.amount:prev.amount);document.getElementById('bankBalanceInput').value=bankBalance;}
+    if(needBank){bankBalance=Math.max(0,bankBalance-tx.amount);document.getElementById('bankBalanceInput').value=bankBalance;tx.applied=true;}
+  }
   if(editingId){const i=transactions.findIndex(t=>t.id===editingId);if(i>=0)transactions[i]=tx;}else transactions.unshift(tx);
   persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');
   addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);editingId=null;
