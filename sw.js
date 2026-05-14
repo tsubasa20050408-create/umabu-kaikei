@@ -1,4 +1,4 @@
-const CACHE = 'circle-v3';
+const CACHE = 'circle-v4';
 const STATIC = ['/', '/index.html', '/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
