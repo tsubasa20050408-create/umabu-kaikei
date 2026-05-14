@@ -1,7 +1,10 @@
 import { Redis } from '@upstash/redis';
 import crypto from 'crypto';
 
-const redis = Redis.fromEnv();
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
+});
 const TOKEN_TTL = 60 * 60 * 24 * 7; // 7日
 
 function sha256(s) {
