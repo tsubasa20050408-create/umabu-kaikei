@@ -772,7 +772,17 @@ function toggleTxStatus(id){
 }
 function deleteTx(id){
   if(!confirm('この取引を削除しますか？')||userRole==='viewer')return;
-  const tx=transactions.find(t=>t.id===id);transactions=transactions.filter(t=>t.id!==id);
+  const tx=transactions.find(t=>t.id===id);
+  if(tx?.applied){
+    if(tx.account==='現金'&&tx.cashBreakdown){
+      for(const[v,n]of Object.entries(tx.cashBreakdown))counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;
+      syncInputs();
+    }else if(tx.account==='通帳'){
+      bankBalance=Math.max(0,bankBalance+(tx.type==='income'?-tx.amount:tx.amount));
+      document.getElementById('bankBalanceInput').value=bankBalance;
+    }
+  }
+  transactions=transactions.filter(t=>t.id!==id);
   persist();renderTxList();showToast('削除しました');if(tx)addAudit('取引削除',tx.summary);
 }
 
@@ -830,6 +840,7 @@ function saveTx(){
   const prevBank=prev?.applied&&prev.account==='通帳';
   const needCash=tx.type==='payment'&&tx.status==='done'&&tx.account==='現金';
   const needBank=tx.type==='payment'&&tx.status==='done'&&tx.account==='通帳';
+  const needIncomeBank=tx.type==='income'&&tx.status==='done'&&tx.account==='通帳';
   if(needCash){
     const tmpC={...counts};
     if(prevCashBd)for(const[v,n]of Object.entries(prevCashBd))tmpC[parseInt(v)]=(tmpC[parseInt(v)]||0)+n;
@@ -850,6 +861,7 @@ function saveTx(){
     if(prevCashBd){for(const[v,n]of Object.entries(prevCashBd))counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;syncInputs();}
     if(prevBank){bankBalance+=(prev.type==='income'?-prev.amount:prev.amount);document.getElementById('bankBalanceInput').value=bankBalance;}
     if(needBank){bankBalance=Math.max(0,bankBalance-tx.amount);document.getElementById('bankBalanceInput').value=bankBalance;tx.applied=true;}
+    if(needIncomeBank){bankBalance=Math.max(0,bankBalance+tx.amount);document.getElementById('bankBalanceInput').value=bankBalance;tx.applied=true;}
   }
   if(editingId){const i=transactions.findIndex(t=>t.id===editingId);if(i>=0)transactions[i]=tx;}else transactions.unshift(tx);
   persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');
