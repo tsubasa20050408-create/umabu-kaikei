@@ -1,34 +1,12 @@
-import { Redis } from '@upstash/redis';
-import crypto from 'crypto';
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
-});
-const TOKEN_TTL = 60 * 60 * 24 * 7; // 7日
-
-function sha256(s) {
-  return crypto.createHash('sha256').update(s).digest('hex');
-}
+import { CORRECT_PIN, makeToken } from './_lib.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'method_not_allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
   const { pin } = req.body || {};
-  if (!pin || typeof pin !== 'string') {
-    return res.status(400).json({ error: 'pin_required' });
-  }
+  if (!pin || typeof pin !== 'string') return res.status(400).json({ error: 'pin_required' });
+  if (pin.trim() !== CORRECT_PIN) return res.status(401).json({ error: 'invalid_pin' });
 
-  const correctPin = '0521';
-  if (pin.trim() !== correctPin) {
-    return res.status(401).json({ error: 'invalid_pin' });
-  }
-
-  const token = crypto.randomBytes(32).toString('hex');
-  await redis.set(`token:${token}`, '1', { ex: TOKEN_TTL });
-  return res.status(200).json({ token, expiresIn: TOKEN_TTL });
+  return res.status(200).json({ token: makeToken(), expiresIn: 604800 });
 }
