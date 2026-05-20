@@ -452,6 +452,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
     </div>
   </div>
 </div>
+<input type="file" id="receiptQuickInput" accept="image/*" onchange="handleQuickReceipt(event)" style="display:none">
 <!-- 領収書プレビュー -->
 <div class="dialog-overlay" id="receiptDialog" onclick="this.classList.remove('open')">
   <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:16px;padding:12px;max-width:90vw;max-height:90vh;overflow:auto">
@@ -483,7 +484,7 @@ let counts={}; ALL_DENOMS.forEach(d=>counts[d.v]=0);
 let bankBalance=0,transactions=[],categories=[...DEFAULT_CATS],budgets={},collections=[],auditLog=[];
 let lastServerVersion=0,isSyncing=false;
 let currentFilter='all',editingId=null,modalType='income',modalStatus='done',modalAccount='現金';
-let searchActive=false,searchFilters={},receiptData=null;
+let searchActive=false,searchFilters={},receiptData=null,quickReceiptTxId=null,previewReceiptId=null;
 let currentPeriod='month',periodFrom='',periodTo='';
 let donutChart=null,barChart=null;
 let backupEncFile=null,restoreMode='merge';
@@ -742,9 +743,10 @@ function renderTxList(){
     const stCls=isDone?(isInc?'done-income':'done-payment'):(isInc?'pending-income':'pending-payment');
     const stLbl=isDone?(isInc?'入金済み':'支払済み'):(isInc?'未入金':'未払い');
     const catTag=tx.category?`<span style="color:var(--accent);margin-left:3px">#${esc(tx.category)}</span>`:'';
-    const recIcon=tx.receipt?' 📷':'';
-    const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx('${tx.id}')">編集</button><button class="tx-del-btn" onclick="deleteTx('${tx.id}')">削除</button>${tx.receipt?`<button class="tx-rec-btn" onclick="showReceipt('${tx.id}')">📷</button>`:''}`:'';
-    return `<div class="tx-item"><div><span class="tx-type-badge ${tx.type}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}${recIcon}</div><div class="tx-meta">${tx.date}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div><div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tx.type}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus('${tx.id}')`:'void(0)'}">${stLbl}</button></div></div>`;
+    const recThumb=tx.receipt?`<div style="margin-top:5px"><img src="${tx.receipt}" onclick="showReceipt('${tx.id}')" style="height:52px;border-radius:8px;object-fit:cover;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.18)" alt="領収書"></div>`:'';
+    const recActions=tx.receipt?`<button class="tx-rec-btn" onclick="downloadReceiptById('${tx.id}')">📥 保存</button>`:(canEdit?`<button class="tx-rec-btn" onclick="quickAttachFromFolder('${tx.id}')">🖼 写真</button>`:'');
+    const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx('${tx.id}')">編集</button><button class="tx-del-btn" onclick="deleteTx('${tx.id}')">削除</button>${recActions}`:(tx.receipt?`<button class="tx-rec-btn" onclick="showReceipt('${tx.id}')">📷</button>${recActions}`:recActions);
+    return `<div class="tx-item"><div><span class="tx-type-badge ${tx.type}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${tx.date}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tx.type}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus('${tx.id}')`:'void(0)'}">${stLbl}</button></div></div>`;
   }).join('');
   updateSummary();
 }
@@ -881,8 +883,11 @@ function handleReceipt(e){
   reader.onload=ev=>{img.onload=()=>{const MAX=1280;let w=img.width,h=img.height;if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);receiptData=canvas.toDataURL('image/jpeg',0.8);const thumb=document.getElementById('receiptThumb');thumb.src=receiptData;thumb.style.display='block';document.getElementById('receiptFilename').textContent=file.name;document.getElementById('receiptClearBtn').style.display='';};img.src=ev.target.result;};reader.readAsDataURL(file);
 }
 function clearReceipt(){receiptData=null;document.getElementById('receiptThumb').style.display='none';document.getElementById('receiptFilename').textContent='';document.getElementById('receiptClearBtn').style.display='none';document.getElementById('receiptCamera').value='';document.getElementById('receiptGallery').value='';}
-function showReceipt(id){const tx=transactions.find(t=>t.id===id);if(!tx?.receipt)return;document.getElementById('receiptPreviewImg').src=tx.receipt;document.getElementById('receiptDialog').classList.add('open');}
-function downloadReceipt(){const img=document.getElementById('receiptPreviewImg');if(!img.src||img.src===location.href)return;const a=document.createElement('a');a.href=img.src;a.download='receipt_'+new Date().toISOString().slice(0,10)+'_'+Date.now()+'.jpg';document.body.appendChild(a);a.click();document.body.removeChild(a);}
+function showReceipt(id){const tx=transactions.find(t=>t.id===id);if(!tx?.receipt)return;previewReceiptId=id;document.getElementById('receiptPreviewImg').src=tx.receipt;document.getElementById('receiptDialog').classList.add('open');}
+function downloadReceiptById(id){const tx=transactions.find(t=>t.id===id);if(!tx?.receipt)return;if(/iPhone|iPad|iPod/i.test(navigator.userAgent)){window.open(tx.receipt,'_blank');return;}const a=document.createElement('a');a.href=tx.receipt;a.download='receipt_'+(tx.date||new Date().toISOString().slice(0,10))+'.jpg';document.body.appendChild(a);a.click();document.body.removeChild(a);}
+function downloadReceipt(){if(previewReceiptId)downloadReceiptById(previewReceiptId);}
+function quickAttachFromFolder(id){quickReceiptTxId=id;document.getElementById('receiptQuickInput').click();}
+function handleQuickReceipt(e){const file=e.target.files[0];if(!file||!quickReceiptTxId)return;const id=quickReceiptTxId;const img=new Image(),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),reader=new FileReader();reader.onload=ev=>{img.onload=()=>{const MAX=1280;let w=img.width,h=img.height;if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);const data=canvas.toDataURL('image/jpeg',0.8);const tx=transactions.find(t=>t.id===id);if(tx){tx.receipt=data;persist();renderTxList();showToast('📷 領収書を添付しました');}quickReceiptTxId=null;e.target.value='';};img.src=ev.target.result;};reader.readAsDataURL(file);}
 
 // ===== TAB =====
 const TAB_NAMES=['cash','bank','report','collect'];
