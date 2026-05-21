@@ -177,6 +177,10 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
   <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div></div>
   <button class="qr-toggle" onclick="toggleQR()">QRコード</button>
 </div>
+<div id="redisWarnBanner" style="display:none;background:#fff3cd;border-bottom:3px solid #f59e0b;padding:10px 16px;font-size:.82rem;color:#92400e;align-items:center;gap:10px">
+  <span style="font-size:1.1rem">⚠️</span>
+  <div><strong>Redis未接続：データはこの端末にのみ保存されます</strong><div style="font-size:.76rem;margin-top:2px">Vercelの環境変数（KV_REST_API_URL・KV_REST_API_TOKEN）を設定してください</div></div>
+</div>
 <div class="qr-panel" id="qrPanel">
   <p>スマホのカメラで読み取ってください</p>
   <div class="url-text" id="qrUrlText"></div>
@@ -575,7 +579,9 @@ async function apiLoad(){
   const r=await fetch('/api/data',{headers:{'Authorization':'Bearer '+getToken()}});
   if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
   if(!r.ok)throw new Error('load_failed');
-  return await r.json();
+  const json=await r.json();
+  document.getElementById('redisWarnBanner').style.display=json.redis_ok===false?'flex':'none';
+  return json;
 }
 async function apiSave(payload){
   const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({data:payload,expectedVersion:lastServerVersion})});

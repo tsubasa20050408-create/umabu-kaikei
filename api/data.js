@@ -23,12 +23,12 @@ export default async function handler(req, res) {
   const redis = getRedis();
 
   if (req.method === 'GET') {
-    if (!redis) return res.status(200).json({ data: {}, version: 0 });
+    if (!redis) return res.status(200).json({ data: {}, version: 0, redis_ok: false });
     const [data, version] = await Promise.all([
       redis.get(DATA_KEY),
       redis.get(VERSION_KEY),
     ]);
-    return res.status(200).json({ data: data || {}, version: Number(version) || 0 });
+    return res.status(200).json({ data: data || {}, version: Number(version) || 0, redis_ok: true });
   }
 
   if (req.method === 'POST') {
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     if (typeof data !== 'object' || data === null) {
       return res.status(400).json({ error: 'invalid_payload' });
     }
-    if (!redis) return res.status(200).json({ ok: true, version: 0 });
+    if (!redis) return res.status(200).json({ ok: true, version: 0, redis_ok: false });
     const currentVersion = Number(await redis.get(VERSION_KEY)) || 0;
     if (typeof expectedVersion === 'number' && expectedVersion !== currentVersion) {
       const currentData = await redis.get(DATA_KEY);
