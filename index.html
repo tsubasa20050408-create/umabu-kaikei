@@ -562,7 +562,14 @@ function migrateTx(tx){
 }
 
 // ===== PERSIST / LOAD =====
-function buildPayload(){return{counts:{...counts},bankBalance,transactions:[...transactions],categories:[...categories],budgets:{...budgets},collections:[...collections],auditLog:[...auditLog],savedAt:new Date().toISOString()};}
+function buildPayload(){
+  const txs=transactions.map(({receipt,...tx})=>tx);
+  return{counts:{...counts},bankBalance,transactions:txs,categories:[...categories],budgets:{...budgets},collections:[...collections],auditLog:[...auditLog],savedAt:new Date().toISOString()};
+}
+function saveReceiptsLocally(){
+  const r={};transactions.forEach(tx=>{if(tx.receipt)r[tx.id]=tx.receipt;});
+  try{localStorage.setItem('circle_receipts',JSON.stringify(r));}catch(e){showToast('⚠ 領収書の保存失敗（容量超過）');}
+}
 function getToken(){return sessionStorage.getItem('circle_token');}
 async function apiLoad(){
   const r=await fetch('/api/data',{headers:{'Authorization':'Bearer '+getToken()}});
@@ -583,6 +590,7 @@ function handleAuthFailure(){
   pinBuffer='';updateDots();
 }
 async function persist(){
+  saveReceiptsLocally();
   const p=buildPayload();
   try{localStorage.setItem('circle_data',JSON.stringify(p));}catch(e){showToast('⚠ ローカル保存失敗（容量超過の可能性）');}
   if(!getToken()||isSyncing)return;
@@ -631,6 +639,7 @@ function applyData(data){
   ALL_DENOMS.forEach(d=>counts[d.v]=data.counts?.[d.v]??0);
   bankBalance=data.bankBalance??0;
   transactions=(data.transactions||[]).map(migrateTx);
+  try{const r=JSON.parse(localStorage.getItem('circle_receipts')||'{}');transactions.forEach(tx=>{if(r[tx.id])tx.receipt=r[tx.id];});}catch(e){}
   categories=data.categories?.length?data.categories:[...DEFAULT_CATS];
   budgets=data.budgets||{};collections=data.collections||[];auditLog=data.auditLog||[];
   if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
@@ -790,6 +799,7 @@ function deleteTx(id){
     }
   }
   transactions=transactions.filter(t=>t.id!==id);
+  try{const r=JSON.parse(localStorage.getItem('circle_receipts')||'{}');delete r[id];localStorage.setItem('circle_receipts',JSON.stringify(r));}catch(e){}
   persist();renderTxList();showToast('削除しました');if(tx)addAudit('取引削除',tx.summary);
 }
 
