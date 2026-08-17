@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
   const redis = getRedis();
   if (!redis) {
-    return unavailable(res, 'Upstash の接続情報（KV_REST_API_URL / KV_REST_API_TOKEN）が設定されていません。');
+    return unavailable(res, 'Upstash の接続情報が設定されていないか、正しくありません。/api/health で確認できます。');
   }
 
   try {

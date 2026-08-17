@@ -17,12 +17,17 @@ export const CORRECT_PIN = required('CIRCLE_PIN');
 const SECRET = required('CIRCLE_SECRET');
 const TTL = 7 * 24 * 60 * 60 * 1000; // 7日
 
-// Redis は未設定でも null を返す（アプリ側で警告バナーを出して動作は継続させる）
+// 未設定でも接続情報が壊れていても null を返す。
+// ここで throw すると呼び出し側が 500 になり、利用者は原因を知る手掛かりを失う。
 export function getRedis() {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
-  return new Redis({ url, token });
+  try {
+    return new Redis({ url, token });
+  } catch {
+    return null;
+  }
 }
 
 // 一致判定に要する時間から正解を推測されないよう、常に同じ長さのハッシュ同士で比較する
