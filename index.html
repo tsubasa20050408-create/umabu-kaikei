@@ -179,7 +179,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
 </div>
 <div id="redisWarnBanner" style="display:none;background:#fff3cd;border-bottom:3px solid #f59e0b;padding:10px 16px;font-size:.82rem;color:#92400e;align-items:center;gap:10px">
   <span style="font-size:1.1rem">⚠️</span>
-  <div><strong>Redis未接続：データはこの端末にのみ保存されます</strong><div style="font-size:.76rem;margin-top:2px">Vercelの環境変数（KV_REST_API_URL・KV_REST_API_TOKEN）を設定してください</div></div>
+  <div><strong>クラウドに保存できていません：データはこの端末にのみ残ります</strong><div id="redisWarnDetail" style="font-size:.76rem;margin-top:2px">/api/health を開くと原因が確認できます</div></div>
 </div>
 <div class="qr-panel" id="qrPanel">
   <p>スマホのカメラで読み取ってください</p>
@@ -587,20 +587,31 @@ function saveReceiptsLocally(){
   try{localStorage.setItem('circle_receipts',JSON.stringify(r));}catch(e){showToast('⚠ 領収書の保存失敗（容量超過）');}
 }
 function getToken(){return sessionStorage.getItem('circle_token');}
+// 保存先が使えないことを利用者に見える形で伝える。黙って失敗させると原本を失う。
+function showRedisWarn(msg){
+  document.getElementById('redisWarnBanner').style.display='flex';
+  if(msg)document.getElementById('redisWarnDetail').textContent=msg;
+}
+function hideRedisWarn(){document.getElementById('redisWarnBanner').style.display='none';}
+async function readRedisError(r){
+  try{const j=await r.json();return j.message||'';}catch{return '';}
+}
 async function apiLoad(){
   const r=await fetch('/api/data',{headers:{'Authorization':'Bearer '+getToken()}});
   if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
+  if(r.status===503){showRedisWarn(await readRedisError(r));throw new Error('redis_unavailable');}
   if(!r.ok)throw new Error('load_failed');
   const json=await r.json();
-  document.getElementById('redisWarnBanner').style.display=json.redis_ok===false?'flex':'none';
+  if(json.redis_ok===false)showRedisWarn();else hideRedisWarn();
   return json;
 }
 async function apiSave(payload){
   const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({data:payload,expectedVersion:lastServerVersion})});
   if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
   if(r.status===409){const e=await r.json();return{conflict:true,currentVersion:e.currentVersion,currentData:e.currentData};}
+  if(r.status===503){showRedisWarn(await readRedisError(r));throw new Error('redis_unavailable');}
   if(!r.ok)throw new Error('save_failed');
-  const d=await r.json();lastServerVersion=d.version;return{conflict:false};
+  const d=await r.json();lastServerVersion=d.version;hideRedisWarn();return{conflict:false};
 }
 function handleAuthFailure(){
   authToken='';sessionStorage.removeItem('circle_token');sessionStorage.removeItem('circle_role');
@@ -621,7 +632,8 @@ async function persist(){
       else{lastServerVersion=result.currentVersion;await apiSave(p);showToast('💾 強制保存しました');}
     }
   }catch(e){
-    if(e.message!=='unauthorized')showToast('⚠ サーバー保存失敗（ローカルにのみ保存）');
+    if(e.message==='redis_unavailable')showToast('⚠ クラウドに保存できません（この端末にのみ保存）');
+    else if(e.message!=='unauthorized')showToast('⚠ サーバー保存失敗（ローカルにのみ保存）');
   }finally{isSyncing=false;}
 }
 async function loadData(){
@@ -649,7 +661,9 @@ async function loadData(){
   }catch(e){
     if(e.message!=='unauthorized'){
       const cached=localStorage.getItem('circle_data');
-      if(cached){try{applyData(JSON.parse(cached));showToast('⚠ オフライン：ローカルデータを表示中');}catch{}}
+      const msg=e.message==='redis_unavailable'?'⚠ クラウドに接続できません：この端末のデータを表示中':'⚠ オフライン：ローカルデータを表示中';
+      if(cached){try{applyData(JSON.parse(cached));showToast(msg);}catch{}}
+      else showToast(msg);
     }
   }
 }
