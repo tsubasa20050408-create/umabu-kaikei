@@ -501,7 +501,10 @@ let deviceName=localStorage.getItem('circle_dname')||'';
 let conflictServerVersion=0;
 
 // ===== UTILS =====
-const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;');
+// onclick属性の中のJS文字列に値を埋める用。属性値はHTMLデコードされてからJSとして解釈されるため、
+// HTMLエスケープだけでは引用符を閉じられてしまう。JSON化して正しいリテラルにしてから包む。
+const escJs=s=>esc(JSON.stringify(String(s)));
 const formatYen=n=>Number(n).toLocaleString('ja-JP');
 const todayStr=()=>new Date().toISOString().slice(0,10);
 function formatDate(d){const dt=typeof d==='string'?new Date(d):d;return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;}
@@ -537,6 +540,8 @@ async function checkPin(){
       startPolling();
     }else if(res.status===401){
       showPinError('PINが違います');
+    }else if(res.status===429){
+      showPinError('試行回数が多すぎます。10分ほど待ってからお試しください',4000);
     }else{
       showPinError('認証に失敗しました');
     }
@@ -546,7 +551,7 @@ async function checkPin(){
     setTimeout(()=>{pinBuffer='';updateDots();},600);
   }
 }
-function showPinError(msg='PINが違います'){for(let i=0;i<4;i++)document.getElementById(`dot${i}`).classList.add('error');document.getElementById('lockError').textContent=msg;setTimeout(()=>{updateDots();document.getElementById('lockError').textContent='';},900);}
+function showPinError(msg='PINが違います',ms=900){for(let i=0;i<4;i++)document.getElementById(`dot${i}`).classList.add('error');document.getElementById('lockError').textContent=msg;setTimeout(()=>{updateDots();document.getElementById('lockError').textContent='';},ms);}
 function unlock(){document.getElementById('lockScreen').classList.add('hidden');applyRole();if(!deviceName)promptDeviceName();}
 document.addEventListener('keydown',e=>{if(document.getElementById('lockScreen').classList.contains('hidden'))return;if(e.key>='0'&&e.key<='9')pinInput(e.key);if(e.key==='Backspace')pinDelete();});
 
@@ -766,10 +771,12 @@ function renderTxList(){
     const stLbl=isDone?(isInc?'入金済み':'支払済み'):(isInc?'未入金':'未払い');
     const catTag=tx.category?`<span style="color:var(--accent);margin-left:3px">#${esc(tx.category)}</span>`:'';
     const recCount=(tx.receipts||[]).length;
-    const recThumb=recCount?`<div style="margin-top:5px;position:relative;display:inline-block"><img src="${tx.receipts[0]}" onclick="showReceipt('${tx.id}',0)" style="height:52px;border-radius:8px;object-fit:cover;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.18)" alt="領収書">${recCount>1?`<span style="position:absolute;bottom:-4px;right:-4px;background:var(--accent);color:#fff;font-size:.62rem;font-weight:700;border-radius:9px;padding:1px 5px">+${recCount-1}</span>`:''}</div>`:'';
-    const recActions=canEdit?`<button class="tx-rec-btn" onclick="quickAttachFromFolder('${tx.id}')">${recCount?'➕ 追加':'🖼 写真'}</button>${recCount?`<button class="tx-rec-btn" onclick="downloadReceiptById('${tx.id}')">📥 保存</button>`:''}`:'';
-    const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx('${tx.id}')">編集</button><button class="tx-del-btn" onclick="deleteTx('${tx.id}')">削除</button>${recActions}`:(recCount?`<button class="tx-rec-btn" onclick="showReceipt('${tx.id}',0)">📷 表示</button>`:'');
-    return `<div class="tx-item"><div><span class="tx-type-badge ${tx.type}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${tx.date}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tx.type}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus('${tx.id}')`:'void(0)'}">${stLbl}</button></div></div>`;
+    const jid=escJs(tx.id);
+    const recThumb=recCount?`<div style="margin-top:5px;position:relative;display:inline-block"><img src="${tx.receipts[0]}" onclick="showReceipt(${jid},0)" style="height:52px;border-radius:8px;object-fit:cover;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.18)" alt="領収書">${recCount>1?`<span style="position:absolute;bottom:-4px;right:-4px;background:var(--accent);color:#fff;font-size:.62rem;font-weight:700;border-radius:9px;padding:1px 5px">+${recCount-1}</span>`:''}</div>`:'';
+    const recActions=canEdit?`<button class="tx-rec-btn" onclick="quickAttachFromFolder(${jid})">${recCount?'➕ 追加':'🖼 写真'}</button>${recCount?`<button class="tx-rec-btn" onclick="downloadReceiptById(${jid})">📥 保存</button>`:''}`:'';
+    const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx(${jid})">編集</button><button class="tx-del-btn" onclick="deleteTx(${jid})">削除</button>${recActions}`:(recCount?`<button class="tx-rec-btn" onclick="showReceipt(${jid},0)">📷 表示</button>`:'');
+    const tcls=isInc?'income':'payment';
+    return `<div class="tx-item"><div><span class="tx-type-badge ${tcls}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${esc(tx.date)}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tcls}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus(${jid})`:'void(0)'}">${stLbl}</button></div></div>`;
   }).join('');
   updateSummary();
 }
@@ -1151,7 +1158,7 @@ function renderCollection(){
           <button class="btn-sm" onclick="deleteProject(${pi})" style="color:var(--danger)">削除</button>
         </div>
       </div>
-      <div class="project-member-row">${members.map(m=>`<span class="pm-chip${p.paid?.includes(m)?' paid':''}" onclick="togglePaid(${pi},'${esc(m)}')">${esc(m)}</span>`).join('')}</div>
+      <div class="project-member-row">${members.map(m=>`<span class="pm-chip${p.paid?.includes(m)?' paid':''}" onclick="togglePaid(${pi},${escJs(m)})">${esc(m)}</span>`).join('')}</div>
     </div>`;
   }).join('');
 }
@@ -1264,7 +1271,7 @@ async function openUserMgr(){
   try{
     const r=await fetch('/api/users',{headers:{'Authorization':`Bearer ${authToken}`}});
     if(!r.ok)return;const users=await r.json();
-    document.getElementById('userList').innerHTML=users.length?users.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>${esc(u.username)} <span style="color:var(--text2);font-size:.75rem">${u.role}</span></span><button class="btn-sm" onclick="deleteUser('${esc(u.username)}')" style="color:var(--danger)">削除</button></div>`).join(''):'<div style="color:var(--text2);font-size:.82rem">ユーザーが登録されていません</div>';
+    document.getElementById('userList').innerHTML=users.length?users.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span>${esc(u.username)} <span style="color:var(--text2);font-size:.75rem">${esc(u.role)}</span></span><button class="btn-sm" onclick="deleteUser(${escJs(u.username)})" style="color:var(--danger)">削除</button></div>`).join(''):'<div style="color:var(--text2);font-size:.82rem">ユーザーが登録されていません</div>';
   }catch{}
 }
 async function addUser(){

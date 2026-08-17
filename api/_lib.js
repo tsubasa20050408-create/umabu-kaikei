@@ -1,8 +1,36 @@
 import crypto from 'crypto';
+import { Redis } from '@upstash/redis';
 
-export const CORRECT_PIN = (process.env.CIRCLE_PIN || '0521').trim();
-const SECRET = process.env.CIRCLE_SECRET || 'circle_kaikei_hmac_2024';
+// 既定値をソースに置くと、ソースを読めた人が誰でもログイン・トークン偽造できてしまう。
+// 未設定ならデプロイ直後に気付けるよう即座に失敗させる。
+function required(name) {
+  const v = (process.env[name] || '').trim();
+  if (!v) {
+    throw new Error(
+      `環境変数 ${name} が未設定です。Vercel の Settings → Environment Variables で設定してから再デプロイしてください。`
+    );
+  }
+  return v;
+}
+
+export const CORRECT_PIN = required('CIRCLE_PIN');
+const SECRET = required('CIRCLE_SECRET');
 const TTL = 7 * 24 * 60 * 60 * 1000; // 7日
+
+// Redis は未設定でも null を返す（アプリ側で警告バナーを出して動作は継続させる）
+export function getRedis() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return new Redis({ url, token });
+}
+
+// 一致判定に要する時間から正解を推測されないよう、常に同じ長さのハッシュ同士で比較する
+export function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
 
 export function makeToken() {
   const exp = (Date.now() + TTL).toString();

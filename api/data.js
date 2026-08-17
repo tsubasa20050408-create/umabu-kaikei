@@ -1,15 +1,7 @@
-import { Redis } from '@upstash/redis';
-import { verifyToken } from './_lib.js';
+import { getRedis, verifyToken } from './_lib.js';
 
 const DATA_KEY = 'circle:data';
 const VERSION_KEY = 'circle:version';
-
-function getRedis() {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  return new Redis({ url, token });
-}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
