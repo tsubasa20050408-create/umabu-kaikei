@@ -44,6 +44,12 @@ export default async function handler(req, res) {
     checks,
     problems,
     redis: redis.detail,
+    // どの仕組みで接続情報が入っているかの判別用（名前のみ。値は出さない）。
+    // Vercel の Storage 連携は KV_URL 等もまとめて注入するので、
+    // 手で設定した場合と見分けがつく。
+    storage_env: ['KV_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'KV_REST_API_READ_ONLY_TOKEN',
+      'REDIS_URL', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN']
+      .filter(has),
     hint: fatal.length
       ? 'Vercel の Settings → Environment Variables で不足分を設定し、再デプロイしてください。アプリはこの状態では開けません。'
       : problems.length
