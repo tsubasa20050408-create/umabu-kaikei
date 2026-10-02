@@ -46,7 +46,9 @@ export default async function handler(req, res) {
       await Promise.all([redis.set(DATA_KEY, data), redis.set(VERSION_KEY, newVersion)]);
       return res.status(200).json({ ok: true, version: newVersion, redis_ok: true });
     }
-  } catch {
+  } catch (e) {
+    // 利用者には原因の要約だけ返し、詳細は Vercel の Logs で追えるように残す
+    console.error('[api/data] Redis error:', e && e.message ? e.message : e);
     return unavailable(res, 'Upstash に接続できません。データベースが削除されたか、接続情報が正しくない可能性があります。');
   }
 

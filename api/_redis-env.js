@@ -14,10 +14,13 @@ export const REDIS_ENV_PAIRS = [
   ['KV_REST_API_URL', 'KV_REST_API_TOKEN'],
 ];
 
+// .env 形式の表示（KEY="値"）からコピーすると引用符ごと貼られやすいので、外側の引用符は外す
+const clean = (v) => String(v || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+
 export function redisEnv(env = process.env) {
   for (const [urlName, tokenName] of REDIS_ENV_PAIRS) {
-    const url = (env[urlName] || '').trim();
-    const token = (env[tokenName] || '').trim();
+    const url = clean(env[urlName]);
+    const token = clean(env[tokenName]);
     if (url && token) return { url, token, source: `${urlName} / ${tokenName}` };
   }
   return null;

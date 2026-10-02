@@ -7,7 +7,19 @@ import { redisEnv } from './_redis-env.js';
 const val = (n) => (process.env[n] || '').trim();
 const has = (n) => Boolean(val(n));
 
+// 誰でも開けるページなので、開かれるたびに Upstash へ問い合わせると、
+// 従量課金の枠を外部から消費させられる。同じインスタンス内では結果を一定時間使い回す。
+const PING_CACHE_MS = 60 * 1000;
+let pingCache = { at: 0, result: null };
+
 async function pingRedis() {
+  if (pingCache.result && Date.now() - pingCache.at < PING_CACHE_MS) return pingCache.result;
+  const result = await pingRedisNow();
+  pingCache = { at: Date.now(), result };
+  return result;
+}
+
+async function pingRedisNow() {
   const cfg = redisEnv();
   if (!cfg) return { configured: false, reachable: false, detail: '未設定', source: null };
   try {
