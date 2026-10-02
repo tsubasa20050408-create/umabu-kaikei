@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Redis } from '@upstash/redis';
+import { redisEnv } from './_redis-env.js';
 
 // 既定値をソースに置くと、ソースを読めた人が誰でもログイン・トークン偽造できてしまう。
 // 未設定ならデプロイ直後に気付けるよう即座に失敗させる。
@@ -19,12 +20,12 @@ const TTL = 7 * 24 * 60 * 60 * 1000; // 7日
 
 // 未設定でも接続情報が壊れていても null を返す。
 // ここで throw すると呼び出し側が 500 になり、利用者は原因を知る手掛かりを失う。
+// どの環境変数を読むかは _redis-env.js を参照。
 export function getRedis() {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
+  const cfg = redisEnv();
+  if (!cfg) return null;
   try {
-    return new Redis({ url, token });
+    return new Redis({ url: cfg.url, token: cfg.token });
   } catch {
     return null;
   }

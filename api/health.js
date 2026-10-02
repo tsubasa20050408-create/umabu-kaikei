@@ -1,23 +1,23 @@
 // 設定ミスを切り分けるための診断用エンドポイント。
 // _lib.js を import しない：環境変数の不備で _lib.js が起動できない状況でも
-// 「何が足りないのか」を答えられる必要があるため。
-// 値そのものは絶対に返さず、設定されているかどうかだけを返す。
+// 「何が足りないのか」を答えられる必要があるため（_redis-env.js は import を持たないので安全）。
+// 値そのものは絶対に返さず、設定されているかどうかと、読んでいる変数の「名前」だけを返す。
+import { redisEnv } from './_redis-env.js';
 
 const val = (n) => (process.env[n] || '').trim();
 const has = (n) => Boolean(val(n));
 
 async function pingRedis() {
-  const url = val('KV_REST_API_URL') || val('UPSTASH_REDIS_REST_URL');
-  const token = val('KV_REST_API_TOKEN') || val('UPSTASH_REDIS_REST_TOKEN');
-  if (!url || !token) return { configured: false, reachable: false, detail: '未設定' };
+  const cfg = redisEnv();
+  if (!cfg) return { configured: false, reachable: false, detail: '未設定', source: null };
   try {
-    const r = await fetch(`${url.replace(/\/$/, '')}/ping`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const r = await fetch(`${cfg.url.replace(/\/$/, '')}/ping`, {
+      headers: { Authorization: `Bearer ${cfg.token}` },
     });
-    if (!r.ok) return { configured: true, reachable: false, detail: `HTTP ${r.status}` };
-    return { configured: true, reachable: true, detail: 'OK' };
+    if (!r.ok) return { configured: true, reachable: false, detail: `HTTP ${r.status}`, source: cfg.source };
+    return { configured: true, reachable: true, detail: 'OK', source: cfg.source };
   } catch (e) {
-    return { configured: true, reachable: false, detail: '接続できません' };
+    return { configured: true, reachable: false, detail: '接続できません', source: cfg.source };
   }
 }
 
@@ -44,10 +44,12 @@ export default async function handler(req, res) {
     checks,
     problems,
     redis: redis.detail,
-    // どの仕組みで接続情報が入っているかの判別用（名前のみ。値は出さない）。
-    // Vercel の Storage 連携は KV_URL 等もまとめて注入するので、
-    // 手で設定した場合と見分けがつく。
-    storage_env: ['KV_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'KV_REST_API_READ_ONLY_TOKEN',
+    // アプリが実際に使っている接続情報の変数名（値は出さない）
+    redis_source: redis.source,
+    // どの仕組みで接続情報が入っているかの判別用（名前のみ）。
+    // Vercel の Storage 連携は KV_URL 等もまとめて注入するので、手で設定した場合と見分けがつく。
+    storage_env: ['CIRCLE_REDIS_REST_URL', 'CIRCLE_REDIS_REST_TOKEN',
+      'KV_URL', 'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'KV_REST_API_READ_ONLY_TOKEN',
       'REDIS_URL', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN']
       .filter(has),
     hint: fatal.length
