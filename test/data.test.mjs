@@ -142,19 +142,25 @@ test('POST: 同時保存は片方だけが成功する', async () => {
   assert.deepEqual([a.statusCode, b.statusCode].sort(), [200, 409]);
 });
 
-test('POST: 900KB 超は 413', async () => {
+test('POST: 4MB 超は 413（Vercel の本文上限 4.5MB の手前で理由付きで拒否）', async () => {
   const r = fakeRedis();
-  const big = { s: 'x'.repeat(900001) };
+  const big = { s: 'x'.repeat(4000001) };
   const res = await run(r, { method: 'POST', body: { data: big, expectedVersion: 0 } });
   assert.equal(res.statusCode, 413);
   assert.equal(res.body.error, 'payload_too_large');
-  assert.ok(res.body.bytes > 900000);
+  assert.ok(res.body.bytes > 4000000);
   assert.match(res.body.message, /保存データが大きすぎます（約\d+KB）/);
   assert.equal(r.calls, 0);
 });
 
+test('POST: 1MB 程度なら保存できる（umabu の旧データは約1.1MBあった）', async () => {
+  const r = fakeRedis();
+  const res = await run(r, { method: 'POST', body: { data: { s: 'x'.repeat(1200000) }, expectedVersion: 0 } });
+  assert.equal(res.statusCode, 200);
+});
+
 test('POST: 日本語はバイト数で数える（文字数では収まる量でも超える）', async () => {
-  const res = await run(fakeRedis(), { method: 'POST', body: { data: { s: 'あ'.repeat(300000) }, expectedVersion: 0 } });
+  const res = await run(fakeRedis(), { method: 'POST', body: { data: { s: 'あ'.repeat(1400000) }, expectedVersion: 0 } });
   assert.equal(res.statusCode, 413);
 });
 

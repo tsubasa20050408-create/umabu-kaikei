@@ -1,8 +1,9 @@
 // テストで偽の Redis を差し込めるよう、依存は import せず引数で受け取る（このファイルは何も import しない）。
 const DATA_KEY = 'circle:data';
 const VERSION_KEY = 'circle:version';
-// Upstash の1リクエスト上限（1MB）に余裕を持たせた上限。超えると以後すべての保存が恒久的に失敗する。
-const MAX_BYTES = 900000;
+// 実際に効く上限は Vercel の関数が受け取れる本文の 4.5MB（Upstash 側は1リクエスト 10MB まで）。
+// それを超えると Vercel が原因の分からないエラーを返すので、手前で理由付きの 413 を返す。
+const MAX_BYTES = 4000000;
 
 // 版の確認と書き込みを別々に行うと、同時保存で他端末の更新が消える。Lua で1往復・アトミックにする。
 const CAS_SCRIPT = `

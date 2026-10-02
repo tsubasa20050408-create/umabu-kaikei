@@ -484,7 +484,7 @@ const ALL_DENOMS=[...COINS.map(d=>({...d,type:'coin'})),...BILLS.map(d=>({...d,t
 const DENOM_LABEL=Object.fromEntries(ALL_DENOMS.map(d=>[d.v,d.l]));
 const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽費','助成金','その他'];
 const MAX_AMT=9999999999;
-// 操作ログは全件をメインデータに持つと 1MB 制限で保存が恒久的に止まる。直近だけ持ち、古い分はサーバーの保管庫（/api/audit）へ逃がす。
+// 操作ログは全件をメインデータに持つと、保存や同期のたびに送るデータが際限なく膨らむ。直近だけ持ち、古い分はサーバーの保管庫（/api/audit）へ逃がす。
 const AUDIT_INLINE_MAX=300, AUDIT_RESTORE_MAX=10000;
 
 // ===== STATE =====
@@ -587,6 +587,7 @@ function migrateTx(tx){
   if(tx.applied===undefined)tx.applied=tx.status==='done';
   if(tx.cashBreakdown===undefined)tx.cashBreakdown=null;
   if(!tx.receipts)tx.receipts=tx.receipt?[tx.receipt]:[];
+  tx.receipts=(Array.isArray(tx.receipts)?tx.receipts:[tx.receipts]).filter(isImageDataUrl);
   delete tx.receipt;
   return tx;
 }
@@ -681,9 +682,9 @@ function setDirty(v){syncDirty=v;updateSyncIndicator();}
 async function persist(){
   if(persistTimer){clearTimeout(persistTimer);persistTimer=null;}
   const{p,json}=saveLocal();
-  // 1MB を超えると以後すべての保存が恒久的に失敗する。手遅れになる前に1回だけ知らせる
+  // サーバーは約4MBを超える保存を受け付けない。手遅れになる前に1回だけ知らせる
   const bytes=new Blob([json]).size;
-  if(bytes>800000&&!sizeWarned){sizeWarned=true;const kb=Math.round(bytes/1024);console.warn('保存データが大きくなっています',bytes);showToast(`⚠ 保存データが大きくなっています（約${kb}KB / 目安の上限900KB）`);}
+  if(bytes>2000000&&!sizeWarned){sizeWarned=true;const kb=Math.round(bytes/1024);console.warn('保存データが大きくなっています',bytes);showToast(`⚠ 保存データが大きくなっています（約${kb}KB / 上限は約4MB）`);}
   if(!getToken())return;
   if(isSyncing){persistPending=true;return;}
   isSyncing=true;
@@ -769,8 +770,12 @@ async function loadData(){
 function applyData(data){
   ALL_DENOMS.forEach(d=>counts[d.v]=data.counts?.[d.v]??0);
   bankBalance=data.bankBalance??0;
+  // 古い版のアプリは領収書画像を取引データに埋め込んでクラウドへ保存していた（umabu の7月時点のデータがこれ）。
+  // 次の保存でクラウド側からは外れるので、取り込んだ時点で端末に書き写して失わないようにする。
+  const legacyReceipts=(data.transactions||[]).some(t=>t&&t.receipt);
   transactions=(data.transactions||[]).map(migrateTx);
   try{const r=JSON.parse(localStorage.getItem('circle_receipts')||'{}');transactions.forEach(tx=>{const v=r[tx.id];if(v)tx.receipts=(Array.isArray(v)?v:[v]).filter(isImageDataUrl);});}catch(e){}
+  if(legacyReceipts)saveReceiptsLocally();
   categories=data.categories?.length?data.categories:[...DEFAULT_CATS];
   budgets=data.budgets||{};collections=data.collections||[];auditLog=data.auditLog||[];
   if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
@@ -1407,6 +1412,8 @@ function setRestoreMode(m){restoreMode=m;document.getElementById('mergeMode').cl
 async function buildFullBackup(){
   let receipts={},cashHistory=[],archive=[],complete=true;
   try{receipts=JSON.parse(localStorage.getItem('circle_receipts')||'{}');}catch{}
+  // 画面に出ている（メモリ上の）領収書を優先して含める。端末への書き込みがまだの画像も取りこぼさないため
+  transactions.forEach(tx=>{if(tx.receipts&&tx.receipts.length)receipts[tx.id]=tx.receipts;});
   try{cashHistory=getHistory();}catch{}
   try{archive=await fetchAuditAll();}catch{complete=false;}
   const auditArchive=dedupeAudit([...auditOutbox,...archive]);
