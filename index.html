@@ -174,7 +174,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
 </div>
 <div class="sync-banner" id="syncBanner">
   <div class="sync-dot" id="syncDot"></div>
-  <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div><span id="syncPending" style="display:none;font-size:.76rem;margin-top:2px;font-weight:700;color:#c05621">未送信の変更があります（自動で再送します）</span></div>
+  <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div><span id="syncPending" style="display:none;font-size:.76rem;margin-top:2px;font-weight:700;color:#c05621">未送信の変更があります（自動で再送します）</span><span id="syncReceiptPending" style="display:none;font-size:.76rem;margin-top:2px;margin-left:8px;font-weight:700;color:#c05621"></span></div>
   <button class="qr-toggle" onclick="toggleQR()">QRコード</button>
 </div>
 <div id="redisWarnBanner" style="display:none;background:#fff3cd;border-bottom:3px solid #f59e0b;padding:10px 16px;font-size:.82rem;color:#92400e;align-items:center;gap:10px">
@@ -415,6 +415,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
   <div class="modal-sheet">
     <div class="modal-title" id="backupModalTitle">暗号化バックアップ</div>
     <div class="form-group"><label class="form-label">パスフレーズ（8文字以上推奨）</label><input id="backupPass" class="form-input" type="password" placeholder="パスフレーズを入力"></div>
+    <div id="backupExportSection" class="form-group"><label style="display:flex;gap:8px;align-items:center;font-size:.84rem"><input type="checkbox" id="backupIncludeReceipts" checked>領収書の写真を含める（枚数が多いとファイルが大きくなります）</label></div>
     <div id="backupImportSection" style="display:none">
       <div class="form-group"><label class="form-label">復元方法</label>
         <div style="display:flex;gap:8px">
@@ -461,7 +462,8 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
   <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:16px;padding:12px;max-width:90vw;max-height:90vh;overflow:auto">
     <div style="position:relative;display:flex;align-items:center;justify-content:center">
       <button id="receiptPrevBtn" onclick="receiptNav(-1)" style="position:absolute;left:-4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:1rem;z-index:1">‹</button>
-      <img id="receiptPreviewImg" src="" style="max-width:80vw;max-height:66vh;border-radius:10px;display:block">
+      <div id="receiptPreviewMsg" style="display:none;padding:40px 20px;text-align:center;font-size:.85rem;color:var(--text2);max-width:80vw"></div>
+      <img id="receiptPreviewImg" src="" style="max-width:80vw;max-height:66vh;border-radius:10px;display:none">
       <button id="receiptNextBtn" onclick="receiptNav(1)" style="position:absolute;right:-4px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:1rem;z-index:1">›</button>
     </div>
     <div id="receiptPreviewCounter" style="text-align:center;font-size:.78rem;color:var(--text2);margin-top:6px"></div>
@@ -486,6 +488,8 @@ const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽�
 const MAX_AMT=9999999999;
 // 操作ログは全件をメインデータに持つと、保存や同期のたびに送るデータが際限なく膨らむ。直近だけ持ち、古い分はサーバーの保管庫（/api/audit）へ逃がす。
 const AUDIT_INLINE_MAX=300, AUDIT_RESTORE_MAX=10000;
+// 領収書の写真は端末の IndexedDB とクラウド（/api/receipt）に置き、取引には id だけを持たせる。localStorage（約5MB）に画像を入れると数十枚で満杯になる。
+const RC_DB='circle-receipts',RC_STORE='images',RC_EDGE=1600,RC_SOFT_MAX=900000,RC_RAW_MAX=1900000,RC_THUMB_EDGE=240,RC_THUMB_BATCH=50,RC_MISS_MS=60000;
 
 // ===== STATE =====
 let authToken=sessionStorage.getItem('circle_token')||'';
@@ -504,12 +508,17 @@ const isAuditEntry=a=>!!a&&typeof a.ts==='string'&&typeof a.action==='string';
 let auditOutbox=(()=>{try{const v=JSON.parse(localStorage.getItem('circle_audit_outbox')||'[]');return Array.isArray(v)?v.filter(isAuditEntry):[];}catch{return[];}})();
 let auditFlushing=false,auditArchiveCache=[],auditArchiveLoaded=false;
 let currentFilter='all',editingId=null,modalType='income',modalStatus='done',modalAccount='現金';
-let searchActive=false,searchFilters={},receiptDataList=[],quickReceiptTxId=null,previewReceiptId=null,previewReceiptIndex=0;
+let searchActive=false,searchFilters={},modalReceiptIds=[],quickReceiptTxId=null,previewReceiptId=null,previewReceiptIndex=0;
 let currentPeriod='month',periodFrom='',periodTo='';
 let donutChart=null,barChart=null;
 let backupEncFile=null,restoreMode='merge';
 let deviceName=localStorage.getItem('circle_dname')||'';
 let conflictServerVersion=0;
+// 領収書: 一覧用サムネイル（原寸はメモリに持たない）、サーバーにも無かった id の記録、旧形式の画像→id の対応、IndexedDB が使えない時の退避先。
+// rcGen は「送信待ちを調べ直す必要がある」印（変わっていなければ毎回 IndexedDB を全件読まずに済む）
+const thumbCache=new Map(),thumbMiss=new Map(),thumbBusy=new Set(),legacyIdMap=new Map(),rcMem=new Map();
+let rcDbP=null,rcMemWarned=false,rcPersistAsked=false,receiptUploading=false,receiptRerun=false,receiptPendingN=0,rcGen=0,rcScanGen=-1;
+let legacyMigrating=false,legacyRerun=false,legacyBadWarned=false,restoring=false,modalSeq=0;
 
 // ===== UTILS =====
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;');
@@ -519,6 +528,7 @@ const escJs=s=>esc(JSON.stringify(String(s)));
 // 領収書として受け入れるのは、端末で撮影・縮小した画像と同じ形式（data:image/〜;base64,〜）だけ。
 // 取り込んだファイルの値は <img src> に入るので、それ以外を通すとスクリプトを仕込める。
 function isImageDataUrl(s){return typeof s==='string'&&/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s);}
+const isReceiptId=s=>typeof s==='string'&&/^r[0-9a-f]{32}$/.test(s);
 const formatYen=n=>Number(n).toLocaleString('ja-JP');
 const todayStr=()=>new Date().toISOString().slice(0,10);
 function formatDate(d){const dt=typeof d==='string'?new Date(d):d;return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;}
@@ -586,20 +596,19 @@ function migrateTx(tx){
   if(!tx.category)tx.category='';
   if(tx.applied===undefined)tx.applied=tx.status==='done';
   if(tx.cashBreakdown===undefined)tx.cashBreakdown=null;
-  if(!tx.receipts)tx.receipts=tx.receipt?[tx.receipt]:[];
-  tx.receipts=(Array.isArray(tx.receipts)?tx.receipts:[tx.receipts]).filter(isImageDataUrl);
-  delete tx.receipt;
+  tx.receiptIds=Array.isArray(tx.receiptIds)?[...new Set(tx.receiptIds.filter(isReceiptId))]:[];
+  // 旧形式（取引に画像そのものが入っている）は、クラウドへ送り終えるまで _legacyReceipts に取っておく。buildPayload が送信データに残す
+  const old=[...(Array.isArray(tx.receipts)?tx.receipts:tx.receipts?[tx.receipts]:[]),...(tx.receipt?[tx.receipt]:[]),...(Array.isArray(tx._legacyReceipts)?tx._legacyReceipts:[])].filter(isImageDataUrl);
+  if(old.length)tx._legacyReceipts=[...new Set(old)];else delete tx._legacyReceipts;
+  delete tx.receipt;delete tx.receipts;
   return tx;
 }
 
 // ===== PERSIST / LOAD =====
 function buildPayload(){
-  const txs=transactions.map(({receipts,...tx})=>tx);
+  // 旧形式の画像は、クラウドへ送り終える（finishLegacyMigration）までは送信データから外さない。外すと、移行が途中で止まった時にクラウド上の唯一の原本を失う
+  const txs=transactions.map(({_legacyReceipts,...tx})=>_legacyReceipts&&_legacyReceipts.length?{...tx,receipts:_legacyReceipts}:tx);
   return{counts:{...counts},bankBalance,transactions:txs,categories:[...categories],budgets:{...budgets},collections:[...collections],auditLog:[...auditLog],savedAt:new Date().toISOString()};
-}
-function saveReceiptsLocally(){
-  const r={};transactions.forEach(tx=>{if(tx.receipts&&tx.receipts.length)r[tx.id]=tx.receipts;});
-  try{localStorage.setItem('circle_receipts',JSON.stringify(r));}catch(e){showToast('⚠ 領収書の保存失敗（容量超過）');}
 }
 function getToken(){return sessionStorage.getItem('circle_token');}
 // 保存先が使えないことを利用者に見える形で伝える。黙って失敗させると原本を失う。
@@ -651,9 +660,7 @@ function handleAuthFailure(){
 // 保存中に呼ばれた分を捨てると、その変更はサーバーに届かないまま残ってしまう。
 // 印だけ付けておき、今の保存が終わった直後に最新の状態でもう一度送る。
 let persistPending=false;
-// 領収書は大きいので、変わらない入力（枚数など）の保存では書き直さない
-function saveLocal(withReceipts=true,mark=true){
-  if(withReceipts)saveReceiptsLocally();
+function saveLocal(mark=true){
   const p=buildPayload(),json=JSON.stringify(p);
   try{localStorage.setItem('circle_data',json);}catch(e){showToast('⚠ ローカル保存失敗（容量超過の可能性）');}
   if(mark)markUnsynced();
@@ -668,15 +675,17 @@ function readUnsynced(){try{const u=JSON.parse(localStorage.getItem('circle_unsy
 // サーバーの版を端末にも残す。オフラインで起動した時、表示中の内容がどの版のものかを失わないため
 function setServerVersion(v){lastServerVersion=v;try{localStorage.setItem('circle_server_version',String(v));}catch{}}
 // サーバーから取り込んだ内容は、版と一緒に端末へ書き写す（未送信の印は付けない）
-function rememberServer(v){setServerVersion(v);saveLocal(false,false);}
+function rememberServer(v){setServerVersion(v);saveLocal(false);}
 // 現金の±や残高の入力は連打される。1回ごとに送ると Redis のコマンドを浪費するので、手が止まってからまとめて送る。
 // 端末への保存だけは毎回行う（途中で閉じても失われない）。
-function schedulePersist(){saveLocal(false);clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=null;persist();},PERSIST_DEBOUNCE_MS);}
+function schedulePersist(){saveLocal();clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=null;persist();},PERSIST_DEBOUNCE_MS);}
 function flushPendingPersist(){if(persistTimer){clearTimeout(persistTimer);persistTimer=null;persist();}}
 function updateSyncIndicator(){
   const pend=document.getElementById('syncPending'),dot=document.getElementById('syncDot');
   if(pend)pend.style.display=syncDirty?'':'none';
-  if(dot)dot.classList.toggle('offline',syncDirty||syncOffline);
+  if(dot)dot.classList.toggle('offline',syncDirty||syncOffline||receiptPendingN>0);
+  const rp=document.getElementById('syncReceiptPending');
+  if(rp){rp.style.display=receiptPendingN>0?'':'none';rp.textContent=`📤 写真${receiptPendingN}枚 送信待ち`;}
 }
 function setDirty(v){syncDirty=v;updateSyncIndicator();}
 async function persist(){
@@ -704,7 +713,7 @@ async function persist(){
     syncOffline=false;setDirty(false);
     // まとめ待ちや保存待ちが残っていれば、それはまだ未送信なので印は消さない
     if(!persistTimer&&!persistPending)clearUnsynced();
-    flushAuditOutbox();
+    flushAuditOutbox();uploadPendingReceipts();
   }catch(e){
     if(e.message!=='unauthorized'){
       // 失敗のたびに出すと、Redis 停止中の30秒ごとの再送でトーストが出続ける。「送信済み→未送信」に変わった時だけ出す
@@ -765,29 +774,27 @@ async function loadData(){
       const sv=Number(localStorage.getItem('circle_server_version'));if(Number.isInteger(sv))lastServerVersion=sv;
       const un=readUnsynced();if(un&&cached){lastServerVersion=un.base;setDirty(true);}
     }
-  }finally{flushAuditOutbox();}
+  }finally{flushAuditOutbox();uploadPendingReceipts();}
 }
 function applyData(data){
   ALL_DENOMS.forEach(d=>counts[d.v]=data.counts?.[d.v]??0);
   bankBalance=data.bankBalance??0;
-  // 古い版のアプリは領収書画像を取引データに埋め込んでクラウドへ保存していた（umabu の7月時点のデータがこれ）。
-  // 次の保存でクラウド側からは外れるので、取り込んだ時点で端末に書き写して失わないようにする。
-  const legacyReceipts=(data.transactions||[]).some(t=>t&&t.receipt);
   transactions=(data.transactions||[]).map(migrateTx);
-  try{const r=JSON.parse(localStorage.getItem('circle_receipts')||'{}');transactions.forEach(tx=>{const v=r[tx.id];if(v)tx.receipts=(Array.isArray(v)?v:[v]).filter(isImageDataUrl);});}catch(e){}
-  if(legacyReceipts)saveReceiptsLocally();
   categories=data.categories?.length?data.categories:[...DEFAULT_CATS];
   budgets=data.budgets||{};collections=data.collections||[];auditLog=data.auditLog||[];
   if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
   syncInputs();document.getElementById('bankBalanceInput').value=bankBalance||'';
   renderTxList();updateSummary();renderReport();renderCollection();renderCatManager();renderBudget();renderAuditLog();
   normalizeAudit();
+  // 取引が参照する写真が変わるので、送信待ちを調べ直す。旧形式の画像（古い版のアプリが取引に埋め込んだもの。umabu の7月時点のデータ）は端末へ取り込んで送信する
+  rcDirty();migrateLegacyReceipts().catch(()=>{});
 }
 // 5秒ごとに全データを取ると Redis の従量課金を使い切る。版番号だけを30秒ごとに確認し、変わった時だけ全データを取る。
 // startPolling が再度呼ばれても（再ログインなど）二重に動かさない。
 function startPolling(){clearInterval(pollTimer);pollTimer=setInterval(pollOnce,POLL_MS);}
 async function pollOnce(){
-  if(document.hidden||!getToken()||isSyncing||persistTimer)return;
+  if(document.hidden||!getToken()||isSyncing||persistTimer||restoring)return;
+  uploadPendingReceipts();
   // 未送信の変更がある間に取り込むと、端末の変更をサーバー側の内容で上書きしてしまう。先に再送する
   if(syncDirty){persist();return;}
   try{
@@ -805,6 +812,7 @@ async function pollOnce(){
 // スマホで別アプリから戻った瞬間に最新を出す。閉じる／隠れる時は、まとめ待ちの保存を取りこぼさない
 document.addEventListener('visibilitychange',()=>{if(document.hidden)flushPendingPersist();else pollOnce();});
 window.addEventListener('pagehide',flushPendingPersist);
+window.addEventListener('online',()=>{uploadPendingReceipts();});
 
 // ===== CASH TAB =====
 const calcTotal=()=>ALL_DENOMS.reduce((s,d)=>s+d.v*counts[d.v],0);
@@ -901,15 +909,18 @@ function renderTxList(){
     const stCls=isDone?(isInc?'done-income':'done-payment'):(isInc?'pending-income':'pending-payment');
     const stLbl=isDone?(isInc?'入金済み':'支払済み'):(isInc?'未入金':'未払い');
     const catTag=tx.category?`<span style="color:var(--accent);margin-left:3px">#${esc(tx.category)}</span>`:'';
-    const recCount=(tx.receipts||[]).length;
+    const recCount=(tx.receiptIds||[]).length;
     const jid=escJs(tx.id);
-    const recThumb=recCount?`<div style="margin-top:5px;position:relative;display:inline-block"><img src="${esc(tx.receipts[0])}" onclick="showReceipt(${jid},0)" style="height:52px;border-radius:8px;object-fit:cover;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.18)" alt="領収書">${recCount>1?`<span style="position:absolute;bottom:-4px;right:-4px;background:var(--accent);color:#fff;font-size:.62rem;font-weight:700;border-radius:9px;padding:1px 5px">+${recCount-1}</span>`:''}</div>`:'';
+    // サムネイルがまだ無い間（他の端末の写真を取得中など）は、同じ大きさの枠に📷を出す。クリックすれば原寸を取りに行く
+    const th=recCount&&thumbCache.get(tx.receiptIds[0]);
+    const recThumb=recCount?`<div style="margin-top:5px;position:relative;display:inline-block">${isImageDataUrl(th)?`<img src="${esc(th)}" onclick="showReceipt(${jid},0)" style="height:52px;border-radius:8px;object-fit:cover;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.18)" alt="領収書">`:`<div onclick="showReceipt(${jid},0)" style="height:52px;width:52px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.3rem;box-shadow:0 1px 6px rgba(0,0,0,.18)" title="領収書">📷</div>`}${recCount>1?`<span style="position:absolute;bottom:-4px;right:-4px;background:var(--accent);color:#fff;font-size:.62rem;font-weight:700;border-radius:9px;padding:1px 5px">+${recCount-1}</span>`:''}</div>`:'';
     const recActions=canEdit?`<button class="tx-rec-btn" onclick="quickAttachFromFolder(${jid})">${recCount?'➕ 追加':'🖼 写真'}</button>${recCount?`<button class="tx-rec-btn" onclick="downloadReceiptById(${jid})">📥 保存</button>`:''}`:'';
     const actions=canEdit?`<button class="tx-edit-btn" onclick="editTx(${jid})">編集</button><button class="tx-del-btn" onclick="deleteTx(${jid})">削除</button>${recActions}`:(recCount?`<button class="tx-rec-btn" onclick="showReceipt(${jid},0)">📷 表示</button>`:'');
     const tcls=isInc?'income':'payment';
     return `<div class="tx-item"><div><span class="tx-type-badge ${tcls}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${esc(tx.date)}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tcls}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="${canEdit?`toggleTxStatus(${jid})`:'void(0)'}">${stLbl}</button></div></div>`;
   }).join('');
   updateSummary();
+  ensureThumbs(filtered.map(t=>(t.receiptIds||[])[0]).filter(Boolean));
 }
 function toggleTxStatus(id){
   const tx=transactions.find(t=>t.id===id);if(!tx||userRole==='viewer')return;
@@ -951,7 +962,6 @@ function deleteTx(id){
     }
   }
   transactions=transactions.filter(t=>t.id!==id);
-  try{const r=JSON.parse(localStorage.getItem('circle_receipts')||'{}');delete r[id];localStorage.setItem('circle_receipts',JSON.stringify(r));}catch(e){}
   persist();renderTxList();showToast('削除しました');if(tx)addAudit('取引削除',tx.summary);
 }
 
@@ -965,12 +975,12 @@ function openModal(id=null){
   document.getElementById('formPayee').value=tx?tx.payee:'';
   document.getElementById('formAmount').value=tx?tx.amount:'';
   setType(tx?tx.type:'income');setStatus(tx?tx.status:'done');setAccount(tx?tx.account:'現金');
-  receiptDataList=tx?.receipts?[...tx.receipts]:[];
-  renderReceiptThumbs();
+  modalSeq++;modalReceiptIds=tx?[...(tx.receiptIds||[])]:[];
+  renderReceiptThumbs();ensureThumbs(modalReceiptIds);
   renderCatChips(tx?.category||'');
   document.getElementById('modalOverlay').classList.add('open');
 }
-function closeModal(){document.getElementById('modalOverlay').classList.remove('open');receiptDataList=[];}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');modalReceiptIds=[];modalSeq++;}
 function closeModalOnBg(e){if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('open');}
 function setType(t){
   modalType=t;
@@ -1002,7 +1012,9 @@ function saveTx(){
   if(!amt||amt<=0||isNaN(amt)){showToast('⚠ 金額を入力してください');return;}
   if(amt>MAX_AMT){showToast('⚠ 金額が上限を超えています');return;}
   const prev=editingId?transactions.find(t=>t.id===editingId):null;
-  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:false,cashBreakdown:null,receipts:receiptDataList.length?[...receiptDataList]:(prev?.receipts||[]),createdAt:prev?.createdAt||new Date().toISOString()};
+  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:false,cashBreakdown:null,receiptIds:[...modalReceiptIds],createdAt:prev?.createdAt||new Date().toISOString()};
+  // 写真は modalReceiptIds がそのまま正（全部消したら0枚で保存される）。旧形式の画像は送信が終わるまで失わないよう引き継ぐ
+  if(prev?._legacyReceipts)tx._legacyReceipts=prev._legacyReceipts;
   const prevCashBd=prev?.applied&&prev.account==='現金'?prev.cashBreakdown:null;
   const prevBank=prev?.applied&&prev.account==='通帳';
   const needCash=tx.type==='payment'&&tx.status==='done'&&tx.account==='現金';
@@ -1029,67 +1041,303 @@ function saveTx(){
     else if(tx.status==='done'){tx.applied=true;}
   }
   if(editingId){const i=transactions.findIndex(t=>t.id===editingId);if(i>=0)transactions[i]=tx;}else transactions.unshift(tx);
-  persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');
-  addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);editingId=null;
+  rcDirty();persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');
+  addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);editingId=null;uploadPendingReceipts();
 }
 function editTx(id){openModal(id);}
 
 // ===== RECEIPT =====
-function resizeToDataURL(file,cb){
-  const img=new Image(),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),reader=new FileReader();
-  reader.onload=ev=>{img.onload=()=>{const MAX=1280;let w=img.width,h=img.height;if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);cb(canvas.toDataURL('image/jpeg',0.8));};img.src=ev.target.result;};
-  reader.readAsDataURL(file);
+// id は原寸 data URL の SHA-256 先頭32桁（内容アドレス）。同じ写真は同じ id になるので、再送・移行のやり直し・複数端末からの同時送信が冪等になる
+const receiptIdOf=async s=>'r'+(await sha256(s)).slice(0,32);
+const rcDirty=()=>{rcGen++;};
+function rcWarnMem(){if(rcMemWarned)return;rcMemWarned=true;showToast('⚠ この端末では写真を一時保存できません。送信が終わるまでアプリを閉じないでください');}
+// 端末内の保管（IndexedDB）。開けない環境（プライベートモード等）ではメモリ上の rcMem に退避する
+function rcDb(){
+  if(!rcDbP)rcDbP=new Promise(res=>{try{const q=indexedDB.open(RC_DB,1);q.onupgradeneeded=()=>{q.result.createObjectStore(RC_STORE,{keyPath:'id'});};q.onsuccess=()=>res(q.result);q.onerror=q.onblocked=()=>res(null);}catch{res(null);}});
+  return rcDbP;
 }
-function handleReceipt(e){
-  const files=[...e.target.files];if(!files.length)return;
-  let remaining=files.length;
-  files.forEach(file=>resizeToDataURL(file,data=>{receiptDataList.push(data);if(--remaining===0){renderReceiptThumbs();e.target.value='';}}));
+const rcTx=(db,mode,fn)=>new Promise((res,rej)=>{try{const t=db.transaction(RC_STORE,mode);let out;const r=fn(t.objectStore(RC_STORE));if(r)r.onsuccess=()=>{out=r.result;};t.oncomplete=()=>res(out);t.onerror=t.onabort=()=>rej(t.error);}catch(e){rej(e);}});
+async function rcGet(id){
+  const db=await rcDb();let r;
+  if(db){try{r=await rcTx(db,'readonly',s=>s.get(id));}catch{}}
+  return r||rcMem.get(id)||null;
+}
+// 既存のレコードとマージする。一度 uploaded になったものを false に戻さない（取り込み直しで送信済みの印が消えて二重送信になるのを防ぐ）
+const rcMerge=(old,p)=>{const m={...(old||{}),...p};if(old&&old.uploaded)m.uploaded=true;if(m.uploaded)delete m.failed;if(!m.createdAt)m.createdAt=Date.now();return m;};
+async function rcPut(p){
+  if(!p.uploaded)rcDirty();
+  const db=await rcDb();
+  if(db){
+    try{await new Promise((res,rej)=>{const t=db.transaction(RC_STORE,'readwrite'),s=t.objectStore(RC_STORE),g=s.get(p.id);g.onsuccess=()=>{s.put(rcMerge(g.result,p));};t.oncomplete=res;t.onerror=t.onabort=()=>rej(t.error);});return;}
+    catch{}
+  }
+  rcWarnMem();rcMem.set(p.id,rcMerge(rcMem.get(p.id),p));
+}
+// 条件に合うレコードだけを残して返す（全件を一度にメモリへ載せない）
+async function rcAll(f=()=>true){
+  const db=await rcDb(),out=new Map();
+  if(db){try{await new Promise((res,rej)=>{const t=db.transaction(RC_STORE,'readonly'),q=t.objectStore(RC_STORE).openCursor();q.onsuccess=()=>{const c=q.result;if(c){if(f(c.value))out.set(c.value.id,c.value);c.continue();}};t.oncomplete=res;t.onerror=t.onabort=()=>rej(t.error);});}catch{}}
+  for(const[id,v]of rcMem)if(f(v))out.set(id,v);
+  return[...out.values()];
+}
+// 未送信の写真がブラウザに勝手に消されにくくなる（ベストエフォート）
+function rcAskPersist(){if(rcPersistAsked)return;rcPersistAsked=true;try{Promise.resolve(navigator.storage?.persist?.()).catch(()=>{});}catch{}}
+
+// 画像の取り込み。FileReader の data URL を経由せず、createImageBitmap（無理なら Image）で直接デコードしてメモリを抑える
+async function decodeImage(blob){
+  try{const b=await createImageBitmap(blob);return{src:b,w:b.width,h:b.height,done:()=>{try{b.close();}catch{}}};}catch{}
+  const url=URL.createObjectURL(blob);
+  try{const i=await new Promise((res,rej)=>{const m=new Image();m.onload=()=>res(m);m.onerror=()=>rej(new Error('decode'));m.src=url;});return{src:i,w:i.naturalWidth,h:i.naturalHeight,done:()=>URL.revokeObjectURL(url)};}
+  catch(e){URL.revokeObjectURL(url);throw e;}
+}
+// 長辺を edge に縮めて JPEG にする。透過 PNG が黒くならないよう白で塗ってから描く
+function drawJpeg(d,edge,q){
+  if(!d.w||!d.h)throw new Error('decode');
+  const k=Math.min(1,edge/Math.max(d.w,d.h)),w=Math.max(1,Math.round(d.w*k)),h=Math.max(1,Math.round(d.h*k)),c=document.createElement('canvas');
+  c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(d.src,0,0,w,h);
+  const u=c.toDataURL('image/jpeg',q);c.width=c.height=0; // Safari はキャンバスを解放しないとメモリを食い続ける
+  if(!isImageDataUrl(u))throw new Error('encode');return u;
+}
+// 原寸: 長辺1600px・q0.7。大きすぎれば q0.55、それでも超えたら長辺1200px（長いレシートは文字が潰れるので、まず長辺は保つ）
+function encodeFull(d){let f=drawJpeg(d,RC_EDGE,0.7);if(f.length>RC_SOFT_MAX){f=drawJpeg(d,RC_EDGE,0.55);if(f.length>RC_SOFT_MAX)f=drawJpeg(d,1200,0.55);}return f;}
+// サーバーはサムネイルを60000文字までしか受け付けない。超えると「送れない写真」扱いになり、端末にしか残らなくなるので、細かい写真は小さく作り直す
+function makeThumb(d){let t=drawJpeg(d,RC_THUMB_EDGE,0.6);if(t.length>50000)t=drawJpeg(d,160,0.4);return t;}
+async function processImage(file){
+  const d=await decodeImage(file);
+  try{const full=encodeFull(d),thumb=makeThumb(d);return{id:await receiptIdOf(full),full,thumb};}
+  finally{d.done();}
+}
+function dataUrlToBlob(s){const i=s.indexOf(','),bin=atob(s.slice(i+1)),a=new Uint8Array(bin.length);for(let k=0;k<bin.length;k++)a[k]=bin.charCodeAt(k);return new Blob([a],{type:s.slice(5,s.indexOf(';'))});}
+async function thumbOfDataUrl(src){const d=await decodeImage(dataUrlToBlob(src));try{return makeThumb(d);}finally{d.done();}}
+// 複数枚は1枚ずつ順番に処理する（12MP を並列にデコードするとスマホのメモリが尽きる）。読めない画像は飛ばして件数を知らせる
+async function addReceiptImages(files){
+  const ids=[];let bad=0;
+  for(let i=0;i<files.length;i++){
+    if(files.length>1)showToast(`📷 写真を処理中 ${i+1}/${files.length}`);
+    try{const r=await processImage(files[i]);await rcPut({id:r.id,full:r.full,thumb:r.thumb,uploaded:false,createdAt:Date.now()});thumbCache.set(r.id,r.thumb);rcAskPersist();ids.push(r.id);}
+    catch{bad++;}
+  }
+  if(bad)showToast(`⚠ 読み込めない画像が${bad}枚ありました`);
+  return ids;
+}
+// 旧形式の data URL を端末へ取り込み id を返す。1.9MB 以下は再エンコードせず原本のまま使う（証跡を劣化させない）。デコードできなければ null
+async function importDataUrl(src){
+  if(!isImageDataUrl(src))return null;
+  try{
+    const raw=src.length<=RC_RAW_MAX;
+    let id=raw?await receiptIdOf(src):legacyIdMap.get(src);
+    if(id){const o=await rcGet(id);if(o&&o.full&&o.thumb){if(isImageDataUrl(o.thumb))thumbCache.set(id,o.thumb);return id;}}
+    const d=await decodeImage(dataUrlToBlob(src));
+    try{
+      const full=raw?src:encodeFull(d),thumb=makeThumb(d);
+      id=await receiptIdOf(full);if(!raw)legacyIdMap.set(src,id);
+      await rcPut({id,full,thumb,uploaded:false,createdAt:Date.now()});thumbCache.set(id,thumb);rcAskPersist();
+      return id;
+    }finally{d.done();}
+  }catch{return null;}
+}
+
+// 送信キュー。送るのは、未送信で失敗扱いでなく、いずれかの取引から参照されているものだけ（取り消した編集画面の写真は送らない）
+async function receiptPendingList(){
+  if(rcScanGen===rcGen)return[];
+  const g=rcGen,ref=new Set(transactions.flatMap(t=>t.receiptIds||[]));
+  const out=await rcAll(r=>!r.uploaded&&!r.failed&&r.full&&ref.has(r.id));
+  if(!out.length&&g===rcGen)rcScanGen=g;
+  return out;
+}
+async function refreshReceiptPending(){receiptPendingN=(await receiptPendingList()).length;updateSyncIndicator();}
+async function uploadPendingReceipts(){
+  if(receiptUploading){receiptRerun=true;return;}
+  if(!getToken()){await refreshReceiptPending();return;}
+  receiptUploading=true;let failedN=0,stop=false;
+  try{
+    while(!stop){
+      const list=await receiptPendingList();if(!list.length)break;
+      for(const r of list){
+        if(!getToken()){stop=true;break;}
+        let res;
+        try{res=await fetch('/api/receipt',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({id:r.id,data:r.full,thumb:r.thumb})});}
+        catch{stop=true;break;}
+        if(res.status===401){handleAuthFailure();stop=true;break;}
+        // 400/413 はこの画像だけの問題なので、印を付けて以後は送らない。503（offline・Redis 停止）などは次の機会に再試行する（トーストは出さない。失敗が続く間は出続けるため）
+        if(res.status===400||res.status===413){const{error}=await readApiError(res);await rcPut({id:r.id,failed:error||String(res.status)});failedN++;continue;}
+        if(!res.ok){stop=true;break;}
+        await rcPut({id:r.id,uploaded:true});
+      }
+    }
+  }finally{receiptUploading=false;}
+  if(failedN)showToast('⚠ 写真1枚をクラウドに送れませんでした（この端末には残っています）');
+  await refreshReceiptPending();
+  if(receiptRerun){receiptRerun=false;return uploadPendingReceipts();}
+  await finishLegacyMigration();
+}
+
+// サムネイル: メモリ → IndexedDB → サーバー（50件ずつ）。サーバーにも無かった id は60秒は取りに行かない。新しく得られた時だけ描き直す（無限ループにしない）
+async function ensureThumbs(ids){
+  ids=[...new Set((ids||[]).filter(isReceiptId))];
+  let got=false;const need=[];
+  for(const id of ids){
+    if(thumbCache.has(id))continue;
+    const r=await rcGet(id);
+    if(r&&isImageDataUrl(r.thumb)){thumbCache.set(id,r.thumb);got=true;}else need.push(id);
+  }
+  const now=Date.now(),miss=getToken()?need.filter(id=>!thumbBusy.has(id)&&!(now-(thumbMiss.get(id)||0)<RC_MISS_MS)):[];
+  for(let i=0;i<miss.length;i+=RC_THUMB_BATCH){
+    const chunk=miss.slice(i,i+RC_THUMB_BATCH);chunk.forEach(id=>thumbBusy.add(id));
+    try{
+      const res=await fetch('/api/receipt?thumbs='+chunk.join(','),{headers:{'Authorization':'Bearer '+getToken()}});
+      if(res.status===401){handleAuthFailure();throw new Error('unauthorized');}
+      if(!res.ok)throw new Error('thumbs_failed');
+      const t=(await res.json()).thumbs||{};
+      // サーバーから来た画像も必ず isImageDataUrl を通してから使う
+      for(const id of chunk){const v=t[id];if(isImageDataUrl(v)){thumbCache.set(id,v);await rcPut({id,thumb:v,uploaded:true});got=true;}else thumbMiss.set(id,Date.now());}
+    }catch{chunk.forEach(id=>thumbMiss.set(id,Date.now()));}
+    finally{chunk.forEach(id=>thumbBusy.delete(id));}
+  }
+  if(got){renderTxList();if(document.getElementById('modalOverlay').classList.contains('open'))renderReceiptThumbs();}
+}
+// 原寸: 端末にあればそれ、無ければサーバーから。受け取った画像は形式と id（ハッシュ）を照合してから使う。取れなければ null
+async function getFullReceipt(id){
+  if(!isReceiptId(id))return null;
+  const r=await rcGet(id);
+  if(r&&isImageDataUrl(r.full))return r.full;
+  if(!getToken())return null;
+  try{
+    const res=await fetch('/api/receipt?id='+id,{headers:{'Authorization':'Bearer '+getToken()}});
+    if(res.status===401){handleAuthFailure();return null;}
+    if(!res.ok)return null;
+    const d=(await res.json()).data;
+    if(!isImageDataUrl(d)||await receiptIdOf(d)!==id)return null;
+    await rcPut({id,full:d,uploaded:true});
+    return d;
+  }catch{return null;}
+}
+
+// 旧データの移行（冪等・やり直し可能）。旧形式＝取引に埋め込まれた画像（_legacyReceipts）と localStorage の circle_receipts
+async function legacyIdOf(src){if(legacyIdMap.has(src))return legacyIdMap.get(src);return src.length<=RC_RAW_MAX?receiptIdOf(src):null;}
+async function migrateLegacyReceipts(){
+  if(legacyMigrating){legacyRerun=true;return;}
+  legacyMigrating=true;
+  try{
+    do{
+      legacyRerun=false;
+      let old={};try{old=JSON.parse(localStorage.getItem('circle_receipts')||'{}')||{};}catch{}
+      const jobs=[];
+      transactions.forEach(t=>(t._legacyReceipts||[]).forEach(src=>jobs.push([t.id,src])));
+      Object.entries(old).forEach(([txId,v])=>(Array.isArray(v)?v:[v]).filter(isImageDataUrl).forEach(src=>jobs.push([txId,src])));
+      if(!jobs.length){await finishLegacyMigration();continue;}
+      let grew=false,bad=0;
+      for(const[txId,src]of jobs){
+        const id=await importDataUrl(src);
+        if(!id){bad++;continue;}
+        // 待っている間に transactions が入れ替わっていても取りこぼさないよう、毎回探し直す。circle_receipts の画像は、その取引が今ある時だけ参照させる
+        const tx=transactions.find(t=>t.id===txId);
+        if(tx&&!tx.receiptIds.includes(id)){tx.receiptIds.push(id);grew=true;}
+      }
+      if(bad&&!legacyBadWarned){legacyBadWarned=true;showToast(`⚠ 画像として読めない旧データの写真が${bad}枚あります（クラウドの旧データにそのまま残します）`);}
+      rcDirty();
+      if(grew)persist();
+      await uploadPendingReceipts();
+    }while(legacyRerun);
+  }finally{legacyMigrating=false;}
+}
+// 送り終えたものだけ旧データを手放す。ここで初めてクラウドの旧データから画像が外れる
+async function finishLegacyMigration(){
+  let changed=false;
+  for(const tx of transactions){
+    if(!tx._legacyReceipts||!tx._legacyReceipts.length)continue;
+    let all=true;
+    for(const src of tx._legacyReceipts){
+      const id=await legacyIdOf(src),r=id&&await rcGet(id);
+      if(!(r&&r.uploaded&&tx.receiptIds.includes(id))){all=false;break;}
+    }
+    if(all){delete tx._legacyReceipts;changed=true;}
+  }
+  if(changed)persist();
+  // circle_receipts は、今ある取引から参照される画像がすべて送信済みで、未送信の変更も無い時だけ消す。満たさなければ残し、次回また判定する
+  const raw=localStorage.getItem('circle_receipts');if(raw===null||syncDirty||readUnsynced())return;
+  let old;try{old=JSON.parse(raw)||{};}catch{return;}
+  for(const[txId,v]of Object.entries(old)){
+    const tx=transactions.find(t=>t.id===txId);
+    for(const src of(Array.isArray(v)?v:[v]).filter(isImageDataUrl)){
+      const id=await legacyIdOf(src),r=id&&await rcGet(id);
+      // 取引がある画像は「参照済みで送信済み」、取引が無い画像は「端末に取り込み済み」でなければ手放さない（取り込み前・デコード不可のものを失わない）
+      if(tx){if(!(r&&r.uploaded&&tx.receiptIds.includes(id)))return;}
+      else if(!(r&&r.full))return;
+    }
+  }
+  localStorage.removeItem('circle_receipts');
+}
+
+// 編集モーダル（modalReceiptIds が正。サムネイルは thumbCache）
+async function handleReceipt(e){
+  const files=[...e.target.files];e.target.value='';if(!files.length)return;
+  const seq=modalSeq;
+  const ids=await addReceiptImages(files);
+  if(seq!==modalSeq)return; // 処理中に閉じた・別の取引を開いた時は、その画面へ足さない
+  ids.forEach(id=>{if(!modalReceiptIds.includes(id))modalReceiptIds.push(id);});
+  renderReceiptThumbs();
 }
 function renderReceiptThumbs(){
-  document.getElementById('receiptFilename').textContent=receiptDataList.length?`${receiptDataList.length}枚添付`:'';
-  document.getElementById('receiptThumbs').innerHTML=receiptDataList.map((src,i)=>`<div style="position:relative"><img src="${esc(src)}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;box-shadow:0 1px 6px rgba(0,0,0,.18)"><button type="button" onclick="removeReceiptAt(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#e53e3e;color:#fff;font-size:.7rem;cursor:pointer;line-height:1">✕</button></div>`).join('');
+  document.getElementById('receiptFilename').textContent=modalReceiptIds.length?`${modalReceiptIds.length}枚添付`:'';
+  document.getElementById('receiptThumbs').innerHTML=modalReceiptIds.map((id,i)=>{
+    const th=thumbCache.get(id);
+    const box=isImageDataUrl(th)?`<img src="${esc(th)}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;box-shadow:0 1px 6px rgba(0,0,0,.18)">`:`<div style="width:64px;height:64px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:1.3rem">📷</div>`;
+    return`<div style="position:relative">${box}<button type="button" onclick="removeReceiptAt(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#e53e3e;color:#fff;font-size:.7rem;cursor:pointer;line-height:1">✕</button></div>`;
+  }).join('');
 }
-function removeReceiptAt(i){receiptDataList.splice(i,1);renderReceiptThumbs();}
+function removeReceiptAt(i){modalReceiptIds.splice(i,1);renderReceiptThumbs();}
+
+// プレビュー: 開いたらまず「読み込み中…」、原寸を非同期に取得して表示する
 function showReceipt(id,index=0){
-  const tx=transactions.find(t=>t.id===id);const list=tx?.receipts||[];if(!list.length)return;
+  const tx=transactions.find(t=>t.id===id);const list=tx?.receiptIds||[];if(!list.length)return;
   previewReceiptId=id;previewReceiptIndex=Math.max(0,Math.min(index,list.length-1));
   renderReceiptPreview();document.getElementById('receiptDialog').classList.add('open');
 }
-function renderReceiptPreview(){
-  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receipts||[];
+async function renderReceiptPreview(){
+  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receiptIds||[];
   if(!list.length){document.getElementById('receiptDialog').classList.remove('open');return;}
-  document.getElementById('receiptPreviewImg').src=list[previewReceiptIndex];
+  const rid=list[previewReceiptIndex],img=document.getElementById('receiptPreviewImg'),msg=document.getElementById('receiptPreviewMsg');
+  const say=t=>{img.style.display='none';msg.textContent=t;msg.style.display='';};
   document.getElementById('receiptPreviewCounter').textContent=list.length>1?`${previewReceiptIndex+1} / ${list.length}`:'';
   const nav=list.length>1?'':'none';
   document.getElementById('receiptPrevBtn').style.display=nav;document.getElementById('receiptNextBtn').style.display=nav;
+  say('読み込み中…');
+  const full=await getFullReceipt(rid);
+  // 素早くめくった時に古い結果で上書きしない。取得完了時に表示中の写真と一致する時だけ反映する
+  if((transactions.find(t=>t.id===previewReceiptId)?.receiptIds||[])[previewReceiptIndex]!==rid)return;
+  if(isImageDataUrl(full)){img.src=full;img.style.display='block';msg.style.display='none';}
+  else say('この写真はまだクラウドにありません（撮影した端末からの送信待ちです）');
 }
 function receiptNav(delta){
-  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receipts||[];if(!list.length)return;
+  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receiptIds||[];if(!list.length)return;
   previewReceiptIndex=(previewReceiptIndex+delta+list.length)%list.length;renderReceiptPreview();
 }
-function downloadReceiptById(id,index){
-  const tx=transactions.find(t=>t.id===id);const list=tx?.receipts||[];if(!list.length)return;
-  const idx=index??0,src=list[idx];
-  if(/iPhone|iPad|iPod/i.test(navigator.userAgent)){window.open(src,'_blank');return;}
+async function downloadReceiptById(id,index){
+  const tx=transactions.find(t=>t.id===id);const list=tx?.receiptIds||[];if(!list.length)return;
+  const idx=index??0,ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // iOS は await の後に window.open するとポップアップ扱いでブロックされるので、先に空の窓を開けておく
+  const w=ios?window.open('','_blank'):null;
+  const src=await getFullReceipt(list[idx]);
+  if(!src){if(w)w.close();showToast('⚠ この写真はまだクラウドにありません（撮影した端末からの送信待ちです）');return;}
+  if(ios){if(w)w.document.write(`<body style="margin:0"><img src="${src}" style="max-width:100%">`);return;}
   const a=document.createElement('a');a.href=src;a.download='receipt_'+(tx.date||new Date().toISOString().slice(0,10))+(list.length>1?`_${idx+1}`:'')+'.jpg';document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function downloadReceipt(){if(previewReceiptId!=null)downloadReceiptById(previewReceiptId,previewReceiptIndex);}
 function downloadAllReceiptsForCurrent(){
-  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receipts||[];
-  list.forEach((src,i)=>setTimeout(()=>downloadReceiptById(previewReceiptId,i),i*400));
+  const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receiptIds||[];
+  list.forEach((rid,i)=>setTimeout(()=>downloadReceiptById(previewReceiptId,i),i*400));
 }
 function quickAttachFromFolder(id){quickReceiptTxId=id;document.getElementById('receiptQuickInput').click();}
-function handleQuickReceipt(e){
-  const files=[...e.target.files];if(!files.length||!quickReceiptTxId)return;
-  const id=quickReceiptTxId;const newOnes=[];let remaining=files.length;
-  files.forEach(file=>resizeToDataURL(file,data=>{
-    newOnes.push(data);
-    if(--remaining===0){
-      const tx=transactions.find(t=>t.id===id);
-      if(tx){tx.receipts=[...(tx.receipts||[]),...newOnes];persist();renderTxList();showToast(`📷 領収書を${newOnes.length}枚追加しました`);}
-      quickReceiptTxId=null;e.target.value='';
-    }
-  }));
+async function handleQuickReceipt(e){
+  const files=[...e.target.files];e.target.value='';if(!files.length||!quickReceiptTxId)return;
+  const id=quickReceiptTxId;quickReceiptTxId=null;
+  const ids=await addReceiptImages(files);
+  const tx=transactions.find(t=>t.id===id);
+  if(!tx||!ids.length)return;
+  const add=ids.filter(i=>!tx.receiptIds.includes(i));
+  tx.receiptIds=[...tx.receiptIds,...add];
+  rcDirty();persist();renderTxList();showToast(`📷 領収書を${add.length}枚追加しました`);uploadPendingReceipts();
 }
 
 // ===== TAB =====
@@ -1212,19 +1460,20 @@ async function exportJSON(){
   const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});
   dlBlob(blob,'circle_backup.json');addAudit('JSONエクスポート','');
   if(!b._auditArchiveComplete)showToast('⚠ 過去ログ（サーバー保管分）は含まれていません');
+  warnReceiptsMissing(b,!b._auditArchiveComplete);
 }
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 function importFile(e){
   const file=e.target.files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
     try{
       if(ext==='json'){
         const data=JSON.parse(ev.target.result);
-        const nRecFile=Object.keys(data.receipts||{}).length;
+        const nRecFile=Object.keys(data.receiptFiles||data.receipts||{}).length;
         if(!confirm(`${(data.transactions||[]).length}件の取引${nRecFile?`と領収書${nRecFile}件`:''}をインポートしますか？\n（重複は自動スキップされます）`))return;
-        const r=restoreBackup(data,false);
+        const r=await restoreBackup(data,false);
         commitRestore('インポート',`JSON 取引${r.added}件追加`,r);
         return;
       }else if(ext==='csv'){
@@ -1247,9 +1496,16 @@ function importFile(e){
 // 取引を足すだけで保存はしない。復元のように他の項目もまとめて戻す処理の途中で
 // 保存が走ると、まだ戻していない項目抜きの状態がサーバーに送られてしまうため。
 function mergeTransactions(txs){
-  const existing=new Set(transactions.map(t=>`${t.date}|${t.amount}|${t.summary}`));
+  const keyOf=t=>`${t.date}|${t.amount}|${t.summary}`;
+  const byKey=new Map(transactions.map(t=>[keyOf(t),t]));
   let added=0;
-  txs.forEach(t=>{const key=`${t.date}|${t.amount}|${t.summary}`;if(!existing.has(key)){transactions.push(migrateTx(t));existing.add(key);added++;}});
+  txs.forEach(t=>{
+    const k=keyOf(t),ex=byKey.get(k),m=migrateTx(ex?{...t}:t);
+    if(!ex){transactions.push(m);byKey.set(k,m);added++;return;}
+    // 重複として飛ばす取引でも、写真は既存の同じ取引へ足す（写真がバックアップ側にだけある場合に失わない）
+    ex.receiptIds=[...new Set([...(ex.receiptIds||[]),...m.receiptIds])];
+    if(m._legacyReceipts)ex._legacyReceipts=[...new Set([...(ex._legacyReceipts||[]),...m._legacyReceipts])];
+  });
   return added;
 }
 function mergeImport(txs){
@@ -1383,7 +1639,7 @@ function togglePaid(pi,member){
   else{
     p.paid.push(member);
     if(confirm(`${member}の支払いを取引として記録しますか？`)){
-      transactions.unshift({id:crypto.randomUUID(),type:'income',summary:`${p.name}（${member}）`,payee:member,amount:p.amount,status:'done',date:todayStr(),account:'現金',category:'部費',applied:false,createdAt:new Date().toISOString()});
+      transactions.unshift({id:crypto.randomUUID(),type:'income',summary:`${p.name}（${member}）`,payee:member,amount:p.amount,status:'done',date:todayStr(),account:'現金',category:'部費',applied:false,receiptIds:[],createdAt:new Date().toISOString()});
       renderTxList();addAudit('集金記録',`${p.name} ${member} ¥${formatYen(p.amount)}`);
     }
   }
@@ -1401,24 +1657,30 @@ async function deriveKey(pass,salt){
   const keyMat=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},keyMat,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 }
-function exportEncrypted(){backupEncFile=null;document.getElementById('backupModalTitle').textContent='暗号化バックアップ';document.getElementById('backupImportSection').style.display='none';document.getElementById('backupActionBtn').textContent='ダウンロード';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');}
-function importEncrypted(e){backupEncFile=e.target.files[0];if(!backupEncFile)return;document.getElementById('backupModalTitle').textContent='バックアップを復元';document.getElementById('backupImportSection').style.display='block';document.getElementById('backupActionBtn').textContent='復元';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');e.target.value='';}
+function exportEncrypted(){backupEncFile=null;document.getElementById('backupModalTitle').textContent='暗号化バックアップ';document.getElementById('backupImportSection').style.display='none';document.getElementById('backupExportSection').style.display='';document.getElementById('backupIncludeReceipts').checked=true;document.getElementById('backupActionBtn').textContent='ダウンロード';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');}
+function importEncrypted(e){backupEncFile=e.target.files[0];if(!backupEncFile)return;document.getElementById('backupModalTitle').textContent='バックアップを復元';document.getElementById('backupImportSection').style.display='block';document.getElementById('backupExportSection').style.display='none';document.getElementById('backupActionBtn').textContent='復元';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');e.target.value='';}
 function closeBackupModal(){document.getElementById('backupModal').classList.remove('open');}
 function setRestoreMode(m){restoreMode=m;document.getElementById('mergeMode').classList.toggle('sel',m==='merge');document.getElementById('replaceMode').classList.toggle('sel',m==='replace');}
 // インフラを失ってもこのファイルだけで元に戻せる必要がある。
-// buildPayload() はクラウド送信用で領収書を除くため、ここで端末ローカルの分を足す。
+// 写真の原寸は取引には無い（id だけ）ので、端末の IndexedDB かクラウドから集めて receiptFiles に入れる。取れなかった枚数は _receiptsMissing に数える。
 // 操作ログの古い分はサーバー保管庫にあるので、取得できればバックアップへ含める（ベストエフォート）。
 // 取得できなかった場合は _auditArchiveComplete:false にして、呼び出し側が利用者へ知らせる。
-async function buildFullBackup(){
-  let receipts={},cashHistory=[],archive=[],complete=true;
-  try{receipts=JSON.parse(localStorage.getItem('circle_receipts')||'{}');}catch{}
-  // 画面に出ている（メモリ上の）領収書を優先して含める。端末への書き込みがまだの画像も取りこぼさないため
-  transactions.forEach(tx=>{if(tx.receipts&&tx.receipts.length)receipts[tx.id]=tx.receipts;});
+async function buildFullBackup({includeReceipts=true}={}){
+  let cashHistory=[],archive=[],complete=true;const receiptFiles={};let missing=0;
+  if(includeReceipts){
+    const ids=[...new Set(transactions.flatMap(t=>t.receiptIds||[]))];
+    for(let i=0;i<ids.length;i++){
+      if(ids.length>=10)showToast(`📦 写真を集めています ${i+1}/${ids.length}`);
+      const f=await getFullReceipt(ids[i]);if(f)receiptFiles[ids[i]]=f;else missing++;
+    }
+  }
   try{cashHistory=getHistory();}catch{}
   try{archive=await fetchAuditAll();}catch{complete=false;}
   const auditArchive=dedupeAudit([...auditOutbox,...archive]);
-  return{...buildPayload(),receipts,cashHistory,auditArchive,_auditArchiveComplete:complete,_backupVersion:2};
+  return{...buildPayload(),...(includeReceipts?{receiptFiles}:{}),_receiptsMissing:missing,cashHistory,auditArchive,_auditArchiveComplete:complete,_backupVersion:3};
 }
+// 写真を集め切れなかった時に知らせる。別のトーストと重なって消えないよう、先にあるトーストの後に出す
+function warnReceiptsMissing(b,after){if(b._receiptsMissing>0)setTimeout(()=>showToast(`⚠ 写真${b._receiptsMissing}枚は取得できず、バックアップに含まれていません`),after?2600:0);}
 // 保存はしない（復元の最後にまとめて保存する）。saveMembers() は内部で保存するので使わない。
 function mergeCollections(incoming){
   const inMembers=incoming.find(c=>c._type==='members');
@@ -1432,7 +1694,12 @@ function mergeCollections(incoming){
 }
 // 保存はしない。呼び出し側ですべて戻し終えてから1回だけ保存する（途中で保存すると
 // まだ戻していない項目が抜けた状態がサーバーに送られる）。
-function restoreBackup(data,replace){
+async function restoreBackup(data,replace){
+  // 写真の取り込みで待つ間に、定期同期（pollOnce）が復元途中の状態をサーバーの内容で上書きしないようにする
+  restoring=true;
+  try{return await restoreBackupInner(data,replace);}finally{restoring=false;}
+}
+async function restoreBackupInner(data,replace){
   if(replace){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];}
   const added=mergeTransactions(data.transactions||[]);
   if(data.categories)categories=[...new Set([...categories,...data.categories])];
@@ -1461,22 +1728,27 @@ function restoreBackup(data,replace){
     if(replace)collections=data.collections;else mergeCollections(data.collections);
   }
 
+  // 写真: 新形式 receiptFiles は id とハッシュが一致するものだけ端末へ入れる（commitRestore 後に送信キューが送る）。取引側の receiptIds は mergeTransactions で入っている
   let receipts=0,rejected=0;
-  if(data.receipts&&typeof data.receipts==='object'){
-    const clean={};
-    for(const[id,v]of Object.entries(data.receipts)){
-      const list=Array.isArray(v)?v:[v];
-      const ok=list.filter(isImageDataUrl);
-      rejected+=list.length-ok.length;
-      if(ok.length)clean[id]=ok;
+  if(data.receiptFiles&&typeof data.receiptFiles==='object'&&!Array.isArray(data.receiptFiles)){
+    for(const[id,v]of Object.entries(data.receiptFiles)){
+      if(!(isReceiptId(id)&&isImageDataUrl(v)&&await receiptIdOf(v)===id)){rejected++;continue;}
+      try{const thumb=await thumbOfDataUrl(v);await rcPut({id,full:v,thumb,uploaded:false,createdAt:Date.now()});thumbCache.set(id,thumb);receipts++;}catch{rejected++;}
     }
-    try{
-      const cur=replace?{}:JSON.parse(localStorage.getItem('circle_receipts')||'{}');
-      const merged={...cur,...clean};
-      localStorage.setItem('circle_receipts',JSON.stringify(merged));
-      receipts=Object.keys(clean).length;
-      transactions.forEach(tx=>{const v=merged[tx.id];if(v)tx.receipts=(Array.isArray(v)?v:[v]).filter(isImageDataUrl);});
-    }catch{showToast('⚠ 領収書の復元に失敗（容量超過）');}
+  }
+  // 旧形式 receipts（{取引id:[data URL]}）: その取引が今あれば取り込んで receiptIds に足す
+  if(data.receipts&&typeof data.receipts==='object'&&!Array.isArray(data.receipts)){
+    for(const[txId,v]of Object.entries(data.receipts)){
+      const list=Array.isArray(v)?v:[v],ok=list.filter(isImageDataUrl);
+      rejected+=list.length-ok.length;
+      const tx=transactions.find(t=>t.id===txId);if(!tx)continue;
+      for(const src of ok){
+        const id=await importDataUrl(src);
+        if(!id){rejected++;continue;}
+        if(!tx.receiptIds.includes(id))tx.receiptIds.push(id);
+        receipts++;
+      }
+    }
   }
 
   if(Array.isArray(data.cashHistory)&&data.cashHistory.length){
@@ -1495,6 +1767,7 @@ function commitRestore(auditAction,auditDetail,r){
   let msg=`✅ 取引${r.added}件を追加${r.receipts?`・領収書${r.receipts}件`:''}`;
   if(r.rejected)msg+=`（画像として読めない領収書${r.rejected}件は除外）`;
   showToast(msg);
+  rcDirty();uploadPendingReceipts();
 }
 async function doBackupAction(){
   const pass=document.getElementById('backupPass').value;
@@ -1506,7 +1779,7 @@ async function doBackupAction(){
       const key=await deriveKey(pass,salt);
       const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);
       const data=JSON.parse(new TextDecoder().decode(plain));
-      const r=restoreBackup(data,restoreMode==='replace');
+      const r=await restoreBackup(data,restoreMode==='replace');
       closeBackupModal();
       commitRestore('バックアップ復元',restoreMode,r);
     }catch{showToast('⚠ 復元に失敗しました（パスフレーズが違う可能性があります）');}
@@ -1514,13 +1787,13 @@ async function doBackupAction(){
     try{
       const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
       const key=await deriveKey(pass,salt);
-      const b=await buildFullBackup();
+      const b=await buildFullBackup({includeReceipts:document.getElementById('backupIncludeReceipts').checked});
       const plain=new TextEncoder().encode(JSON.stringify(b));
       const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain);
       const combined=new Uint8Array(salt.length+iv.length+cipher.byteLength);
       combined.set(salt);combined.set(iv,salt.length);combined.set(new Uint8Array(cipher),salt.length+iv.length);
       dlBlob(new Blob([combined],{type:'application/octet-stream'}),`circle_backup_${todayStr()}.enc`);
-      closeBackupModal();showToast(b._auditArchiveComplete?'✅ 暗号化バックアップを作成しました':'✅ 暗号化バックアップを作成しました（過去ログ（サーバー保管分）は含まれていません）');addAudit('暗号化バックアップ作成','');
+      closeBackupModal();showToast(b._auditArchiveComplete?'✅ 暗号化バックアップを作成しました':'✅ 暗号化バックアップを作成しました（過去ログ（サーバー保管分）は含まれていません）');addAudit('暗号化バックアップ作成','');warnReceiptsMissing(b,true);
     }catch{showToast('⚠ バックアップ作成に失敗しました');}
   }
 }

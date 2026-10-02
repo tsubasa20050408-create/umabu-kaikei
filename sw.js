@@ -1,4 +1,4 @@
-const CACHE = 'circle-v6';
+const CACHE = 'circle-v7';
 const STATIC = ['/', '/icon.svg', '/manifest.json', '/vendor/chart.umd.min.js', '/vendor/xlsx.full.min.js'];
 
 self.addEventListener('install', e => {
