@@ -1,5 +1,5 @@
-const CACHE = 'circle-v5';
-const STATIC = ['/', '/icon.svg', '/manifest.json'];
+const CACHE = 'circle-v6';
+const STATIC = ['/', '/icon.svg', '/manifest.json', '/vendor/chart.umd.min.js', '/vendor/xlsx.full.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC)));

@@ -174,7 +174,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
 </div>
 <div class="sync-banner" id="syncBanner">
   <div class="sync-dot" id="syncDot"></div>
-  <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div></div>
+  <div><strong>クラウド同期</strong><div id="syncUrlText" style="font-size:.76rem;margin-top:2px;opacity:.8"></div><span id="syncPending" style="display:none;font-size:.76rem;margin-top:2px;font-weight:700;color:#c05621">未送信の変更があります（自動で再送します）</span></div>
   <button class="qr-toggle" onclick="toggleQR()">QRコード</button>
 </div>
 <div id="redisWarnBanner" style="display:none;background:#fff3cd;border-bottom:3px solid #f59e0b;padding:10px 16px;font-size:.82rem;color:#92400e;align-items:center;gap:10px">
@@ -328,7 +328,7 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:.78rem;font-weight:700;color:var(--text2)">📋 操作ログ</div>
-        <button class="btn-sm" onclick="exportAudit()">CSV出力</button>
+        <div style="display:flex;gap:6px"><button class="btn-sm" onclick="loadAuditArchive()">📜 過去のログ</button><button class="btn-sm" onclick="exportAudit()">CSV出力</button></div>
       </div>
       <div id="auditLogList" style="max-height:200px;overflow-y:auto;background:var(--surface2);border-radius:10px"></div>
     </div>
@@ -473,8 +473,8 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" async></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" async></script>
+<script src="/vendor/chart.umd.min.js" async></script>
+<script src="/vendor/xlsx.full.min.js" async></script>
 <script>
 // ===== CONSTANTS =====
 const DEVICE_ID = localStorage.getItem('circle_did') || (()=>{const id=crypto.randomUUID();localStorage.setItem('circle_did',id);return id;})();
@@ -483,7 +483,9 @@ const BILLS=[{v:1000,l:'千円'},{v:5000,l:'五千円'},{v:10000,l:'一万円'}]
 const ALL_DENOMS=[...COINS.map(d=>({...d,type:'coin'})),...BILLS.map(d=>({...d,type:'bill'}))];
 const DENOM_LABEL=Object.fromEntries(ALL_DENOMS.map(d=>[d.v,d.l]));
 const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽費','助成金','その他'];
-const MAX_AMT=9999999999, MAX_AUDIT=10000;
+const MAX_AMT=9999999999;
+// 操作ログは全件をメインデータに持つと 1MB 制限で保存が恒久的に止まる。直近だけ持ち、古い分はサーバーの保管庫（/api/audit）へ逃がす。
+const AUDIT_INLINE_MAX=300, AUDIT_RESTORE_MAX=10000;
 
 // ===== STATE =====
 let authToken=sessionStorage.getItem('circle_token')||'';
@@ -492,6 +494,15 @@ let pinBuffer='';
 let counts={}; ALL_DENOMS.forEach(d=>counts[d.v]=0);
 let bankBalance=0,transactions=[],categories=[...DEFAULT_CATS],budgets={},collections=[],auditLog=[];
 let lastServerVersion=0,isSyncing=false;
+// 未送信の変更があるか。ポーラーが端末の未送信の変更をサーバー側の内容で上書きしないための印
+let syncDirty=false,syncOffline=false;
+let pollTimer=null;const POLL_MS=30000;
+let persistTimer=null;const PERSIST_DEBOUNCE_MS=600;
+let sizeWarned=false;
+// 保管庫へ未送信の操作ログ（新しい順）。端末に残すので、オフラインや再読込を挟んでも失われない
+const isAuditEntry=a=>!!a&&typeof a.ts==='string'&&typeof a.action==='string';
+let auditOutbox=(()=>{try{const v=JSON.parse(localStorage.getItem('circle_audit_outbox')||'[]');return Array.isArray(v)?v.filter(isAuditEntry):[];}catch{return[];}})();
+let auditFlushing=false,auditArchiveCache=[],auditArchiveLoaded=false;
 let currentFilter='all',editingId=null,modalType='income',modalStatus='done',modalAccount='現金';
 let searchActive=false,searchFilters={},receiptDataList=[],quickReceiptTxId=null,previewReceiptId=null,previewReceiptIndex=0;
 let currentPeriod='month',periodFrom='',periodTo='';
@@ -596,13 +607,21 @@ function showRedisWarn(msg){
   if(msg)document.getElementById('redisWarnDetail').textContent=msg;
 }
 function hideRedisWarn(){document.getElementById('redisWarnBanner').style.display='none';}
-async function readRedisError(r){
-  try{const j=await r.json();return j.message||'';}catch{return '';}
+async function readApiError(r){
+  try{const j=await r.json();return{error:j.error,message:j.message};}catch{return{};}
+}
+// sw.js はオフライン時に 503 {error:'offline'} を返す。Redis 障害と区別しないと、機内モードでも「クラウド障害」と誤警告する
+async function checkApiStatus(r){
+  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
+  if(r.status===503){
+    const{error,message}=await readApiError(r);
+    if(error==='offline')throw new Error('offline');
+    showRedisWarn(message);throw new Error('redis_unavailable');
+  }
 }
 async function apiLoad(){
   const r=await fetch('/api/data',{headers:{'Authorization':'Bearer '+getToken()}});
-  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
-  if(r.status===503){showRedisWarn(await readRedisError(r));throw new Error('redis_unavailable');}
+  await checkApiStatus(r);
   if(!r.ok)throw new Error('load_failed');
   const json=await r.json();
   if(json.redis_ok===false)showRedisWarn();else hideRedisWarn();
@@ -610,11 +629,18 @@ async function apiLoad(){
 }
 async function apiSave(payload){
   const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({data:payload,expectedVersion:lastServerVersion})});
-  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
   if(r.status===409){const e=await r.json();return{conflict:true,currentVersion:e.currentVersion,currentData:e.currentData};}
-  if(r.status===503){showRedisWarn(await readRedisError(r));throw new Error('redis_unavailable');}
+  await checkApiStatus(r);
+  if(r.status===413){const{message}=await readApiError(r);const e=new Error('payload_too_large');e.detail=message;throw e;}
   if(!r.ok)throw new Error('save_failed');
-  const d=await r.json();lastServerVersion=d.version;hideRedisWarn();return{conflict:false};
+  const d=await r.json();setServerVersion(d.version);hideRedisWarn();return{conflict:false};
+}
+// 定期確認用。全データを転送せず版番号だけ取る（Redis コマンドも1回で済む）
+async function apiVersion(){
+  const r=await fetch('/api/data?v=1',{headers:{'Authorization':'Bearer '+getToken()}});
+  await checkApiStatus(r);
+  if(!r.ok)throw new Error('load_failed');
+  const json=await r.json();hideRedisWarn();return json.version;
 }
 function handleAuthFailure(){
   authToken='';sessionStorage.removeItem('circle_token');sessionStorage.removeItem('circle_role');
@@ -624,10 +650,40 @@ function handleAuthFailure(){
 // 保存中に呼ばれた分を捨てると、その変更はサーバーに届かないまま残ってしまう。
 // 印だけ付けておき、今の保存が終わった直後に最新の状態でもう一度送る。
 let persistPending=false;
+// 領収書は大きいので、変わらない入力（枚数など）の保存では書き直さない
+function saveLocal(withReceipts=true,mark=true){
+  if(withReceipts)saveReceiptsLocally();
+  const p=buildPayload(),json=JSON.stringify(p);
+  try{localStorage.setItem('circle_data',json);}catch(e){showToast('⚠ ローカル保存失敗（容量超過の可能性）');}
+  if(mark)markUnsynced();
+  return{p,json};
+}
+// 「端末には保存したがサーバーでは未確認」の変更を、再読込やアプリ終了をまたいで覚えておく。
+// メモリ上の syncDirty だけだと、閉じた直後や再起動後にサーバーの古い内容で上書きしてしまう。
+// base は、その変更が前提にしているサーバーの版（最初に印を付けた時点の版を保つ）。
+function markUnsynced(){try{if(!localStorage.getItem('circle_unsynced'))localStorage.setItem('circle_unsynced',JSON.stringify({base:lastServerVersion}));}catch{}}
+function clearUnsynced(){try{localStorage.removeItem('circle_unsynced');}catch{}}
+function readUnsynced(){try{const u=JSON.parse(localStorage.getItem('circle_unsynced')||'null');return u&&Number.isInteger(u.base)?u:null;}catch{return null;}}
+// サーバーの版を端末にも残す。オフラインで起動した時、表示中の内容がどの版のものかを失わないため
+function setServerVersion(v){lastServerVersion=v;try{localStorage.setItem('circle_server_version',String(v));}catch{}}
+// サーバーから取り込んだ内容は、版と一緒に端末へ書き写す（未送信の印は付けない）
+function rememberServer(v){setServerVersion(v);saveLocal(false,false);}
+// 現金の±や残高の入力は連打される。1回ごとに送ると Redis のコマンドを浪費するので、手が止まってからまとめて送る。
+// 端末への保存だけは毎回行う（途中で閉じても失われない）。
+function schedulePersist(){saveLocal(false);clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=null;persist();},PERSIST_DEBOUNCE_MS);}
+function flushPendingPersist(){if(persistTimer){clearTimeout(persistTimer);persistTimer=null;persist();}}
+function updateSyncIndicator(){
+  const pend=document.getElementById('syncPending'),dot=document.getElementById('syncDot');
+  if(pend)pend.style.display=syncDirty?'':'none';
+  if(dot)dot.classList.toggle('offline',syncDirty||syncOffline);
+}
+function setDirty(v){syncDirty=v;updateSyncIndicator();}
 async function persist(){
-  saveReceiptsLocally();
-  const p=buildPayload();
-  try{localStorage.setItem('circle_data',JSON.stringify(p));}catch(e){showToast('⚠ ローカル保存失敗（容量超過の可能性）');}
+  if(persistTimer){clearTimeout(persistTimer);persistTimer=null;}
+  const{p,json}=saveLocal();
+  // 1MB を超えると以後すべての保存が恒久的に失敗する。手遅れになる前に1回だけ知らせる
+  const bytes=new Blob([json]).size;
+  if(bytes>800000&&!sizeWarned){sizeWarned=true;const kb=Math.round(bytes/1024);console.warn('保存データが大きくなっています',bytes);showToast(`⚠ 保存データが大きくなっています（約${kb}KB / 目安の上限900KB）`);}
   if(!getToken())return;
   if(isSyncing){persistPending=true;return;}
   isSyncing=true;
@@ -635,12 +691,31 @@ async function persist(){
     const result=await apiSave(p);
     if(result.conflict){
       const ok=confirm('他の端末で更新されています。\n\n「OK」：他の端末の変更を取得して自分の変更を破棄\n「キャンセル」：そのまま強制上書き');
-      if(ok){applyData(result.currentData);lastServerVersion=result.currentVersion;showToast('🔄 最新を読み込みました');}
-      else{lastServerVersion=result.currentVersion;await apiSave(p);showToast('💾 強制保存しました');}
+      if(ok){applyData(result.currentData);rememberServer(result.currentVersion);showToast('🔄 最新を読み込みました');}
+      else{
+        setServerVersion(result.currentVersion);
+        // 送り直す間にさらに別の端末が保存していたら、保存できていない。成功扱いにすると未送信の変更を見失う
+        const again=await apiSave(p);
+        if(again.conflict)throw new Error('conflict_again');
+        showToast('💾 強制保存しました');
+      }
     }
+    syncOffline=false;setDirty(false);
+    // まとめ待ちや保存待ちが残っていれば、それはまだ未送信なので印は消さない
+    if(!persistTimer&&!persistPending)clearUnsynced();
+    flushAuditOutbox();
   }catch(e){
-    if(e.message==='redis_unavailable')showToast('⚠ クラウドに保存できません（この端末にのみ保存）');
-    else if(e.message!=='unauthorized')showToast('⚠ サーバー保存失敗（ローカルにのみ保存）');
+    if(e.message!=='unauthorized'){
+      // 失敗のたびに出すと、Redis 停止中の30秒ごとの再送でトーストが出続ける。「送信済み→未送信」に変わった時だけ出す
+      const wasClean=!syncDirty;setDirty(true);
+      if(wasClean){
+        if(e.message==='offline')showToast('⚠ オフラインのため、この端末にのみ保存しました');
+        else if(e.message==='payload_too_large')showToast('⚠ '+(e.detail||'保存データが大きすぎます'));
+        else if(e.message==='conflict_again')showToast('⚠ 他の端末でも同時に更新されたため保存できませんでした（自動で再試行します）');
+        else if(e.message==='redis_unavailable')showToast('⚠ クラウドに保存できません（この端末にのみ保存）');
+        else showToast('⚠ サーバー保存失敗（ローカルにのみ保存）');
+      }
+    }
   }finally{
     isSyncing=false;
     if(persistPending){persistPending=false;persist();}
@@ -650,6 +725,17 @@ async function loadData(){
   try{
     const{data,version}=await apiLoad();
     lastServerVersion=version||0;
+    // 前回サーバーへ送れなかった変更が端末に残っていれば、サーバーの内容で黙って上書きしない
+    const un=readUnsynced(),unRaw=un&&localStorage.getItem('circle_data');
+    if(un&&unRaw){
+      let local=null;try{local=JSON.parse(unRaw);}catch{}
+      if(local){
+        // 誰も更新していなければそのまま送る。他の端末も更新していたら、どちらを残すか利用者に決めてもらう
+        const keepLocal=lastServerVersion===un.base||confirm('この端末に、前回サーバーへ送れなかった変更が残っています。その後、他の端末でも更新されました。\n\n「OK」：この端末の内容で上書きする\n「キャンセル」：他の端末の最新を使う（この端末の未送信の変更は破棄）');
+        if(keepLocal){applyData(local);await persist();showToast('📤 前回送れなかった変更を送信しました');return;}
+      }
+      clearUnsynced();
+    }
     // Redisが空でlocalStorageに旧データがある場合は自動マイグレーション
     const isEmpty=!data||(!data.transactions?.length&&!Object.values(data.counts||{}).some(v=>v>0)&&!data.bankBalance);
     if(isEmpty){
@@ -667,15 +753,18 @@ async function loadData(){
         }catch{}
       }
     }
-    applyData(data||{});
+    applyData(data||{});rememberServer(version||0);
   }catch(e){
     if(e.message!=='unauthorized'){
       const cached=localStorage.getItem('circle_data');
       const msg=e.message==='redis_unavailable'?'⚠ クラウドに接続できません：この端末のデータを表示中':'⚠ オフライン：ローカルデータを表示中';
       if(cached){try{applyData(JSON.parse(cached));showToast(msg);}catch{}}
       else showToast(msg);
+      // 表示中の内容がどの版のものかを戻す。未送信の変更があれば、その前提の版から再送する（つながり次第ポーラーが送る）
+      const sv=Number(localStorage.getItem('circle_server_version'));if(Number.isInteger(sv))lastServerVersion=sv;
+      const un=readUnsynced();if(un&&cached){lastServerVersion=un.base;setDirty(true);}
     }
-  }
+  }finally{flushAuditOutbox();}
 }
 function applyData(data){
   ALL_DENOMS.forEach(d=>counts[d.v]=data.counts?.[d.v]??0);
@@ -687,23 +776,36 @@ function applyData(data){
   if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
   syncInputs();document.getElementById('bankBalanceInput').value=bankBalance||'';
   renderTxList();updateSummary();renderReport();renderCollection();renderCatManager();renderBudget();renderAuditLog();
+  normalizeAudit();
 }
-function startPolling(){
-  setInterval(async()=>{
-    if(isSyncing||!getToken())return;
-    try{
+// 5秒ごとに全データを取ると Redis の従量課金を使い切る。版番号だけを30秒ごとに確認し、変わった時だけ全データを取る。
+// startPolling が再度呼ばれても（再ログインなど）二重に動かさない。
+function startPolling(){clearInterval(pollTimer);pollTimer=setInterval(pollOnce,POLL_MS);}
+async function pollOnce(){
+  if(document.hidden||!getToken()||isSyncing||persistTimer)return;
+  // 未送信の変更がある間に取り込むと、端末の変更をサーバー側の内容で上書きしてしまう。先に再送する
+  if(syncDirty){persist();return;}
+  try{
+    const v=await apiVersion();
+    if(v!==lastServerVersion){
       const{data,version}=await apiLoad();
-      if(version!==lastServerVersion){applyData(data||{});lastServerVersion=version;showToast('🔄 データを同期しました');}
-      document.getElementById('syncDot').classList.remove('offline');
-    }catch{document.getElementById('syncDot').classList.add('offline');}
-  },5000);
+      // 取得している間に編集が始まっていたら、その編集を消さないよう適用しない（次回に回す）
+      if(!(syncDirty||isSyncing||persistTimer)){applyData(data||{});rememberServer(version);showToast('🔄 データを同期しました');}
+    }
+    syncOffline=false;
+  }catch{syncOffline=true;}
+  updateSyncIndicator();
+  flushAuditOutbox();
 }
+// スマホで別アプリから戻った瞬間に最新を出す。閉じる／隠れる時は、まとめ待ちの保存を取りこぼさない
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushPendingPersist();else pollOnce();});
+window.addEventListener('pagehide',flushPendingPersist);
 
 // ===== CASH TAB =====
 const calcTotal=()=>ALL_DENOMS.reduce((s,d)=>s+d.v*counts[d.v],0);
 function updateTotal(){document.getElementById('totalAmount').innerHTML=`<span>¥</span>${formatYen(calcTotal())}`;}
 function updateSubtotal(v){const el=document.getElementById(`sub_${v}`);if(el)el.textContent='= ¥'+formatYen(v*counts[v]);}
-function setCount(v,val){counts[v]=Math.max(0,isNaN(val)?0:Math.floor(val));const i=document.getElementById(`input_${v}`);if(i)i.value=counts[v];updateSubtotal(v);updateTotal();persist();}
+function setCount(v,val){counts[v]=Math.max(0,isNaN(val)?0:Math.floor(val));const i=document.getElementById(`input_${v}`);if(i)i.value=counts[v];updateSubtotal(v);updateTotal();schedulePersist();}
 function syncInputs(){ALL_DENOMS.forEach(d=>{const i=document.getElementById(`input_${d.v}`);if(i)i.value=counts[d.v];updateSubtotal(d.v);});updateTotal();}
 function buildRow(denom){
   const row=document.createElement('div');row.className=`denom-row ${denom.type}`;
@@ -749,7 +851,7 @@ function calcDenom(){
 }
 
 // ===== BANK TAB =====
-function onBankBalanceChange(){bankBalance=Math.max(0,parseInt(document.getElementById('bankBalanceInput').value)||0);persist();}
+function onBankBalanceChange(){bankBalance=Math.max(0,parseInt(document.getElementById('bankBalanceInput').value)||0);schedulePersist();}
 function setFilter(f,btn){currentFilter=f;searchActive=false;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTxList();document.getElementById('searchPanel').classList.remove('open');}
 function toggleSearch(btn){document.getElementById('searchPanel').classList.toggle('open');btn.classList.toggle('active');updateCatFilter();}
 function getFilteredTx(){
@@ -1100,9 +1202,11 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(budgetData),'予算');
   XLSX.writeFile(wb,'circle_data.xlsx');addAudit('Excelエクスポート',`${transactions.length}件`);
 }
-function exportJSON(){
-  const blob=new Blob([JSON.stringify(buildFullBackup(),null,2)],{type:'application/json'});
+async function exportJSON(){
+  const b=await buildFullBackup();
+  const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});
   dlBlob(blob,'circle_backup.json');addAudit('JSONエクスポート','');
+  if(!b._auditArchiveComplete)showToast('⚠ 過去ログ（サーバー保管分）は含まれていません');
 }
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 function importFile(e){
@@ -1151,17 +1255,64 @@ function mergeImport(txs){
 // ===== AUDIT LOG =====
 function addAudit(action,detail){
   auditLog.unshift({ts:new Date().toISOString(),action,detail,device:deviceName||DEVICE_ID.slice(0,8),user:userRole});
-  if(auditLog.length>MAX_AUDIT)auditLog.length=MAX_AUDIT;
+  normalizeAudit();
   if(document.getElementById('tab-report').classList.contains('active'))renderAuditLog();
+}
+const auditKey=a=>`${a.ts}|${a.action}|${a.detail}`;
+// 同じ記録を重ねない（最初に出た方を残す）。端末・箱・サーバー保管分は重なり得るため
+function dedupeAudit(list){const seen=new Set();return list.filter(a=>{if(!a)return false;const k=auditKey(a);if(seen.has(k))return false;seen.add(k);return true;});}
+const mergeAudit=(...lists)=>dedupeAudit(lists.flat()).sort((x,y)=>String(y.ts).localeCompare(String(x.ts)));
+// メインデータに持つのは直近 AUDIT_INLINE_MAX 件だけ。溢れた古い分は、捨てずに送信待ちの箱へ移す
+function normalizeAudit(){
+  if(auditLog.length<=AUDIT_INLINE_MAX)return;
+  const over=auditLog.splice(AUDIT_INLINE_MAX).filter(isAuditEntry);
+  auditOutbox=dedupeAudit([...over,...auditOutbox]);saveAuditOutbox();flushAuditOutbox();
+}
+function saveAuditOutbox(){try{localStorage.setItem('circle_audit_outbox',JSON.stringify(auditOutbox));}catch{}}
+// 箱の末尾（最も古い分）から送る。新しい塊は常に箱の先頭へ積まれるので、保管庫でも順序が保たれる。
+// 失敗した時は箱をそのまま残す（次回の保存・同期の際に再送）。
+async function flushAuditOutbox(){
+  if(auditFlushing||!getToken()||!auditOutbox.length)return;
+  auditFlushing=true;
+  try{
+    while(auditOutbox.length){
+      const chunk=auditOutbox.slice(-1000);
+      const r=await fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},body:JSON.stringify({entries:chunk})});
+      if(r.status===401){handleAuthFailure();return;}
+      if(!r.ok)return;
+      const sent=new Set(chunk.map(auditKey));
+      auditOutbox=auditOutbox.filter(a=>!sent.has(auditKey(a)));saveAuditOutbox();
+    }
+  }catch{}finally{auditFlushing=false;}
+}
+async function fetchAuditPage(offset,limit){
+  if(!getToken())throw new Error('unauthorized');
+  const r=await fetch(`/api/audit?${offset?`offset=${offset}&`:''}limit=${limit}`,{headers:{'Authorization':'Bearer '+getToken()}});
+  if(r.status===401){handleAuthFailure();throw new Error('unauthorized');}
+  if(!r.ok)throw new Error('audit_failed');
+  const j=await r.json();return Array.isArray(j.entries)?j.entries:[];
+}
+// サーバー保管分を全ページ取得（保管庫の上限 5000 件まで）
+async function fetchAuditAll(){
+  const all=[];
+  for(let off=0;off<5000;off+=1000){const page=await fetchAuditPage(off,1000);all.push(...page);if(page.length<1000)break;}
+  return all;
+}
+async function loadAuditArchive(){
+  try{auditArchiveCache=await fetchAuditPage(0,500);auditArchiveLoaded=true;renderAuditLog();}
+  catch(e){if(e.message!=='unauthorized')showToast('⚠ 過去のログを取得できませんでした');}
 }
 function renderAuditLog(){
   const el=document.getElementById('auditLogList');if(!el)return;
-  if(!auditLog.length){el.innerHTML='<div style="padding:12px;text-align:center;color:var(--text2);font-size:.8rem">ログがありません</div>';return;}
-  el.innerHTML=auditLog.slice(0,100).map(a=>`<div class="audit-item"><span>${formatDate(new Date(a.ts))} [${esc(a.action)}]</span><span style="color:var(--text2)">${esc(a.detail||'')}</span></div>`).join('');
+  const list=mergeAudit(auditLog,auditOutbox,auditArchiveCache).slice(0,auditArchiveLoaded?600:100);
+  if(!list.length){el.innerHTML='<div style="padding:12px;text-align:center;color:var(--text2);font-size:.8rem">ログがありません</div>';return;}
+  el.innerHTML=list.map(a=>`<div class="audit-item"><span>${formatDate(new Date(a.ts))} [${esc(a.action)}]</span><span style="color:var(--text2)">${esc(a.detail||'')}</span></div>`).join('');
 }
-function exportAudit(){
+async function exportAudit(){
+  let archive=[];
+  try{archive=await fetchAuditAll();}catch{showToast('⚠ サーバー保管分は取得できなかったため、端末にある分のみ出力しました');}
   const BOM='﻿';const header='日時,操作,詳細,デバイス,ロール\n';
-  const rows=auditLog.map(a=>[formatDate(new Date(a.ts)),a.action,a.detail||'',a.device||'',a.user||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const rows=mergeAudit(auditLog,auditOutbox,archive).map(a=>[formatDate(new Date(a.ts)),a.action,a.detail||'',a.device||'',a.user||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   dlBlob(new Blob([BOM+header+rows],{type:'text/csv;charset=utf-8'}),'audit_log.csv');
 }
 
@@ -1251,11 +1402,15 @@ function closeBackupModal(){document.getElementById('backupModal').classList.rem
 function setRestoreMode(m){restoreMode=m;document.getElementById('mergeMode').classList.toggle('sel',m==='merge');document.getElementById('replaceMode').classList.toggle('sel',m==='replace');}
 // インフラを失ってもこのファイルだけで元に戻せる必要がある。
 // buildPayload() はクラウド送信用で領収書を除くため、ここで端末ローカルの分を足す。
-function buildFullBackup(){
-  let receipts={},cashHistory=[];
+// 操作ログの古い分はサーバー保管庫にあるので、取得できればバックアップへ含める（ベストエフォート）。
+// 取得できなかった場合は _auditArchiveComplete:false にして、呼び出し側が利用者へ知らせる。
+async function buildFullBackup(){
+  let receipts={},cashHistory=[],archive=[],complete=true;
   try{receipts=JSON.parse(localStorage.getItem('circle_receipts')||'{}');}catch{}
   try{cashHistory=getHistory();}catch{}
-  return{...buildPayload(),receipts,cashHistory,_backupVersion:2};
+  try{archive=await fetchAuditAll();}catch{complete=false;}
+  const auditArchive=dedupeAudit([...auditOutbox,...archive]);
+  return{...buildPayload(),receipts,cashHistory,auditArchive,_auditArchiveComplete:complete,_backupVersion:2};
 }
 // 保存はしない（復元の最後にまとめて保存する）。saveMembers() は内部で保存するので使わない。
 function mergeCollections(incoming){
@@ -1277,11 +1432,13 @@ function restoreBackup(data,replace){
   Object.assign(budgets,data.budgets||{});
 
   // 操作ログは会計の証跡なので、置換でも失わないよう戻す。同じ記録は重ねない。
-  if(Array.isArray(data.auditLog)){
-    const key=a=>`${a.ts}|${a.action}|${a.detail}`;
-    const seen=new Set(auditLog.map(key));
-    const add=data.auditLog.filter(a=>a&&a.ts&&!seen.has(key(a)));
-    auditLog=[...auditLog,...add].sort((x,y)=>String(y.ts).localeCompare(String(x.ts))).slice(0,MAX_AUDIT);
+  // バックアップの auditLog（直近分）と auditArchive（サーバー保管分）の両方を戻す
+  const incAudit=[...(Array.isArray(data.auditLog)?data.auditLog:[]),...(Array.isArray(data.auditArchive)?data.auditArchive:[])];
+  if(incAudit.length){
+    const seen=new Set(auditLog.map(auditKey));
+    const add=dedupeAudit(incAudit.filter(a=>a&&a.ts&&!seen.has(auditKey(a))));
+    auditLog=[...auditLog,...add].sort((x,y)=>String(y.ts).localeCompare(String(x.ts))).slice(0,AUDIT_RESTORE_MAX);
+    normalizeAudit();
   }
 
   // 現金枚数・通帳残高は「今いくらあるか」の記録なので、マージ時に黙って上書きしない。
@@ -1350,12 +1507,13 @@ async function doBackupAction(){
     try{
       const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
       const key=await deriveKey(pass,salt);
-      const plain=new TextEncoder().encode(JSON.stringify(buildFullBackup()));
+      const b=await buildFullBackup();
+      const plain=new TextEncoder().encode(JSON.stringify(b));
       const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain);
       const combined=new Uint8Array(salt.length+iv.length+cipher.byteLength);
       combined.set(salt);combined.set(iv,salt.length);combined.set(new Uint8Array(cipher),salt.length+iv.length);
       dlBlob(new Blob([combined],{type:'application/octet-stream'}),`circle_backup_${todayStr()}.enc`);
-      closeBackupModal();showToast('✅ 暗号化バックアップを作成しました');addAudit('暗号化バックアップ作成','');
+      closeBackupModal();showToast(b._auditArchiveComplete?'✅ 暗号化バックアップを作成しました':'✅ 暗号化バックアップを作成しました（過去ログ（サーバー保管分）は含まれていません）');addAudit('暗号化バックアップ作成','');
     }catch{showToast('⚠ バックアップ作成に失敗しました');}
   }
 }
