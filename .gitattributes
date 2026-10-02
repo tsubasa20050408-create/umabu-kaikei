@@ -1,0 +1,3 @@
+# 同梱ライブラリは入手元と1バイトも違わない状態を保つ（vendor/README.md の sha256 で照合するため）。
+# Windows の改行変換（core.autocrlf）で書き換わらないよう、テキスト扱いしない。
+vendor/** -text
