@@ -1091,7 +1091,7 @@ function exportExcel(){
   XLSX.writeFile(wb,'circle_data.xlsx');addAudit('Excelエクスポート',`${transactions.length}件`);
 }
 function exportJSON(){
-  const blob=new Blob([JSON.stringify(buildPayload(),null,2)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify(buildFullBackup(),null,2)],{type:'application/json'});
   dlBlob(blob,'circle_backup.json');addAudit('JSONエクスポート','');
 }
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
@@ -1103,8 +1103,13 @@ function importFile(e){
     try{
       if(ext==='json'){
         const data=JSON.parse(ev.target.result);
-        if(!confirm(`${(data.transactions||[]).length}件の取引をインポートしますか？\n（重複は自動スキップされます）`))return;
-        mergeImport(data.transactions||[]);
+        const nRecFile=Object.keys(data.receipts||{}).length;
+        if(!confirm(`${(data.transactions||[]).length}件の取引${nRecFile?`と領収書${nRecFile}件`:''}をインポートしますか？\n（重複は自動スキップされます）`))return;
+        const nRec=restoreBackup(data,false);
+        persist();renderCatManager();renderBudget();renderCollection();renderTxList();
+        showToast(`✅ 取り込みました（取引${transactions.length}件${nRec?`・領収書${nRec}件`:''}）`);
+        addAudit('インポート',`JSON 取引${transactions.length}件`);
+        return;
       }else if(ext==='csv'){
         const lines=ev.target.result.replace(/^﻿/,'').split('\n').slice(1).filter(Boolean);
         const txs=lines.map(l=>{const cols=l.match(/(".*?"|[^,]+)/g)||[];const get=i=>(cols[i]||'').replace(/^"|"$/g,'').replace(/""/g,'"');return{id:get(8)||crypto.randomUUID(),date:get(0),type:get(1)==='入金'?'income':'payment',summary:get(2),payee:get(3),amount:parseInt(get(4))||0,status:get(5)==='済み'?'done':'pending',category:get(6),account:get(7)||'未設定',applied:get(5)==='済み',createdAt:new Date().toISOString()};});
@@ -1229,6 +1234,58 @@ function exportEncrypted(){backupEncFile=null;document.getElementById('backupMod
 function importEncrypted(e){backupEncFile=e.target.files[0];if(!backupEncFile)return;document.getElementById('backupModalTitle').textContent='バックアップを復元';document.getElementById('backupImportSection').style.display='block';document.getElementById('backupActionBtn').textContent='復元';document.getElementById('backupPass').value='';document.getElementById('backupModal').classList.add('open');e.target.value='';}
 function closeBackupModal(){document.getElementById('backupModal').classList.remove('open');}
 function setRestoreMode(m){restoreMode=m;document.getElementById('mergeMode').classList.toggle('sel',m==='merge');document.getElementById('replaceMode').classList.toggle('sel',m==='replace');}
+// インフラを失ってもこのファイルだけで元に戻せる必要がある。
+// buildPayload() はクラウド送信用で領収書を除くため、ここで端末ローカルの分を足す。
+function buildFullBackup(){
+  let receipts={},cashHistory=[];
+  try{receipts=JSON.parse(localStorage.getItem('circle_receipts')||'{}');}catch{}
+  try{cashHistory=getHistory();}catch{}
+  return{...buildPayload(),receipts,cashHistory,_backupVersion:2};
+}
+function mergeCollections(incoming){
+  const inMembers=incoming.find(c=>c._type==='members');
+  if(inMembers)saveMembers([...new Set([...getMembers(),...(inMembers.list||[])])]);
+  const seen=new Set(getProjects().map(p=>p.name+'|'+p.createdAt));
+  incoming.filter(c=>!c._type).forEach(p=>{if(!seen.has(p.name+'|'+p.createdAt))collections.push(p);});
+}
+function restoreBackup(data,replace){
+  if(replace){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];}
+  mergeImport(data.transactions||[]);
+  if(data.categories)categories=[...new Set([...categories,...data.categories])];
+  Object.assign(budgets,data.budgets||{});
+
+  // 現金枚数・通帳残高は「今いくらあるか」の記録なので、マージ時に黙って上書きしない。
+  // 手元が空のときだけ埋める。
+  const hasCurrentCash=ALL_DENOMS.some(d=>counts[d.v]>0)||bankBalance>0;
+  if(data.counts&&(replace||!hasCurrentCash)){
+    ALL_DENOMS.forEach(d=>counts[d.v]=data.counts[d.v]??0);
+    bankBalance=data.bankBalance??0;
+    syncInputs();document.getElementById('bankBalanceInput').value=bankBalance||'';
+  }
+
+  if(Array.isArray(data.collections)&&data.collections.length){
+    if(replace)collections=data.collections;else mergeCollections(data.collections);
+  }
+
+  let nRec=0;
+  if(data.receipts&&typeof data.receipts==='object'){
+    try{
+      const cur=replace?{}:JSON.parse(localStorage.getItem('circle_receipts')||'{}');
+      const merged={...cur,...data.receipts};
+      localStorage.setItem('circle_receipts',JSON.stringify(merged));
+      nRec=Object.keys(data.receipts).length;
+      transactions.forEach(tx=>{const v=merged[tx.id];if(v)tx.receipts=Array.isArray(v)?v:[v];});
+    }catch{showToast('⚠ 領収書の復元に失敗（容量超過）');}
+  }
+
+  if(Array.isArray(data.cashHistory)&&data.cashHistory.length){
+    try{
+      const cur=replace?[]:getHistory();
+      localStorage.setItem('circle_cash_history',JSON.stringify([...data.cashHistory,...cur].slice(0,50)));
+    }catch{}
+  }
+  return nRec;
+}
 async function doBackupAction(){
   const pass=document.getElementById('backupPass').value;
   if(pass.length<1){showToast('⚠ パスフレーズを入力してください');return;}
@@ -1239,17 +1296,17 @@ async function doBackupAction(){
       const key=await deriveKey(pass,salt);
       const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);
       const data=JSON.parse(new TextDecoder().decode(plain));
-      if(restoreMode==='replace'){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];}
-      mergeImport(data.transactions||[]);
-      if(data.categories)categories=[...new Set([...categories,...data.categories])];
-      Object.assign(budgets,data.budgets||{});
-      persist();renderCatManager();renderBudget();closeBackupModal();showToast('✅ 復元しました');addAudit('バックアップ復元',restoreMode);
+      const nRec=restoreBackup(data,restoreMode==='replace');
+      persist();renderCatManager();renderBudget();renderCollection();renderTxList();
+      closeBackupModal();
+      showToast(`✅ 復元しました（取引${transactions.length}件${nRec?`・領収書${nRec}件`:''}）`);
+      addAudit('バックアップ復元',restoreMode);
     }catch{showToast('⚠ 復元に失敗しました（パスフレーズが違う可能性があります）');}
   }else{
     try{
       const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
       const key=await deriveKey(pass,salt);
-      const plain=new TextEncoder().encode(JSON.stringify(buildPayload()));
+      const plain=new TextEncoder().encode(JSON.stringify(buildFullBackup()));
       const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain);
       const combined=new Uint8Array(salt.length+iv.length+cipher.byteLength);
       combined.set(salt);combined.set(iv,salt.length);combined.set(new Uint8Array(cipher),salt.length+iv.length);
