@@ -152,6 +152,18 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
 .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(100px);background:#2d3748;color:#fff;padding:11px 22px;border-radius:24px;font-size:.83rem;font-weight:600;transition:transform .3s cubic-bezier(.175,.885,.32,1.275);pointer-events:none;z-index:1000;width:max-content;max-width:90vw;text-align:center}
 .toast.show{transform:translateX(-50%) translateY(0)}
 @media print{#lockScreen,.sync-banner,.qr-panel,header .tabs,.tab-btn,.fab,.modal-overlay,.dialog-overlay,.toast,.actions,.tx-row-actions,.filter-row,.export-row,.period-row,.search-panel,.icon-btn{display:none!important}body{background:#fff;color:#000;padding:0}.card,.chart-wrap,.tx-list{box-shadow:none;border:1px solid #ddd}}
+.fy-t{width:100%;border-collapse:collapse;font-size:.8rem;margin:6px 0 10px}.fy-t th,.fy-t td{padding:5px 6px;border-bottom:1px solid var(--border);text-align:left}.fy-t .n{text-align:right;font-variant-numeric:tabular-nums}.fy-t tr.tot td{font-weight:800;border-top:2px solid var(--border)}
+.fy-sec{font-size:.76rem;font-weight:700;color:var(--text2);margin:12px 0 4px}
+.fy-badge{display:inline-block;padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:700}.fy-badge.closed{background:var(--income-bg);color:var(--income)}.fy-badge.open{background:var(--pending-bg);color:var(--pending)}
+.fy-note{font-size:.74rem;color:var(--text2);line-height:1.6}.fy-warn{color:var(--payment);font-weight:700}
+.tx-event{display:inline-block;margin-left:4px;padding:0 6px;border-radius:9px;background:var(--surface2);border:1px solid var(--border);font-size:.66rem;color:var(--text2)}
+.tx-adv-badge{padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:700;white-space:nowrap;background:var(--pending-bg);color:var(--pending)}.tx-adv-badge.settled{background:var(--income-bg);color:var(--income)}
+.adv-row,.ev-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:.82rem}.adv-row:last-child,.ev-row:last-child{border-bottom:none}.ev-row{cursor:pointer}
+#printReport{display:none}
+@media print{@page{size:A4 portrait;margin:15mm}body.printing-report>*:not(#printReport){display:none!important}body.printing-report #printReport{display:block;background:#fff;color:#000;font-family:'Yu Mincho','MS PMincho','Hiragino Mincho ProN',serif;font-size:11pt;line-height:1.6}
+#printReport h1{font-size:17pt;text-align:center;margin:0 0 4px}#printReport .pr-period{text-align:center;margin-bottom:14px}#printReport h2{font-size:12pt;margin:14px 0 4px;border-bottom:1px solid #000}
+#printReport table{width:100%;border-collapse:collapse;margin-bottom:6px;page-break-inside:avoid}#printReport th,#printReport td{border:1px solid #000;padding:3px 8px;text-align:left}#printReport .n{text-align:right}#printReport tr.tot td{font-weight:700}
+#printReport .pr-note{font-size:9.5pt;margin:2px 0}#printReport .pr-sign{margin-top:22px;page-break-inside:avoid}#printReport .pr-sign p{margin:0 0 14px}#printReport .pr-line{text-align:right;margin-bottom:18px}}
 </style>
 </head>
 <body>
@@ -242,6 +254,13 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
         <span style="color:var(--text2)">円</span>
       </div>
     </div>
+    <div class="card" id="advCard" style="display:none">
+      <div class="bank-card-title">💴 立替金（未精算）</div>
+      <div id="advList"></div>
+    </div>
+    <div class="card" id="settleHistCard" style="display:none">
+      <details><summary style="cursor:pointer;font-size:.78rem;font-weight:700;color:var(--text2)">🧾 精算の履歴</summary><div id="settleHistList" style="margin-top:8px"></div></details>
+    </div>
     <div class="summary-grid">
       <div class="card-sm s-income-done"><div class="s-label">入金済み合計</div><div class="s-amount" id="sum-income-done">¥0</div></div>
       <div class="card-sm s-income-pending"><div class="s-label">未入金合計</div><div class="s-amount" id="sum-income-pending">¥0</div></div>
@@ -265,8 +284,9 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
         <div class="form-group"><label class="form-label">最大金額</label><input id="srchMax" class="form-input" type="number" min="0" oninput="applySearch()"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <select id="srchAccount" class="form-input" onchange="applySearch()"><option value="">口座：すべて</option><option value="現金">現金</option><option value="通帳">通帳</option><option value="未設定">未設定</option></select>
-        <button class="btn-sm" onclick="clearSearch()">クリア</button>
+        <select id="srchAccount" class="form-input" onchange="applySearch()"><option value="">口座：すべて</option><option value="現金">現金</option><option value="通帳">通帳</option><option value="未設定">未設定</option><option value="立替">立替</option></select>
+        <select id="srchEvent" class="form-input" onchange="applySearch()"><option value="">イベント：すべて</option></select>
+        <button class="btn-sm" onclick="clearSearch()" style="white-space:nowrap">クリア</button>
       </div>
     </div>
     <div class="tx-list" id="txList"><div class="tx-empty">取引がありません<br><small>＋ボタンで追加できます</small></div></div>
@@ -293,6 +313,14 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
     </div>
     <div class="chart-wrap"><canvas id="donutChart"></canvas></div>
     <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+    <div class="card" id="eventCard" style="display:none">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:6px">🎪 イベント別収支</div>
+      <div id="eventBody"></div>
+    </div>
+    <div class="card" id="fiscalCard">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">📘 年度決算</div>
+      <div id="fiscalBody"></div>
+    </div>
     <div class="card">
       <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:10px">📤 データ出力</div>
       <div class="export-row">
@@ -363,15 +391,21 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
     <div class="form-group"><label class="form-label" id="formPayeeLabel">支払先 / 受取先</label><input id="formPayee" class="form-input" type="text" placeholder="例：○○商店"></div>
     <div class="form-group"><label class="form-label">金額（円）</label><input id="formAmount" class="form-input" type="number" min="0" max="9999999999" placeholder="0" oninput="updateRecvUi()"></div>
     <div class="form-group"><label class="form-label">カテゴリ</label><div class="cat-chips" id="formCatChips"></div></div>
+    <div class="form-group"><label class="form-label">イベント（任意）</label><input id="formEvent" class="form-input" type="text" list="eventList" placeholder="例：春合宿"><datalist id="eventList"></datalist></div>
     <div class="form-group">
       <label class="form-label">口座区分</label>
       <div class="account-opts">
         <button class="account-opt sel" id="accCash" onclick="setAccount('現金')">現金</button>
         <button class="account-opt" id="accBank" onclick="setAccount('通帳')">通帳</button>
         <button class="account-opt" id="accOther" onclick="setAccount('未設定')">未設定</button>
+        <button class="account-opt" id="accAdv" onclick="setAccount('立替')" style="display:none">立替</button>
       </div>
     </div>
-    <div class="form-group">
+    <div class="form-group" id="advGroup" style="display:none">
+      <label class="form-label">立て替えた人（必須）</label><input id="formPaidBy" class="form-input" type="text" list="paidByList" placeholder="例：山田"><datalist id="paidByList"></datalist>
+      <div style="font-size:.7rem;color:var(--text2);margin-top:4px">部の支出として記録します（現金・通帳は動きません）。立て替えた人への支払いは、取引タブの「立替金」から精算します。</div>
+    </div>
+    <div class="form-group" id="statusGroup">
       <label class="form-label" id="statusLabel">ステータス</label>
       <div class="status-toggle">
         <button class="status-option sel-done-income" id="statusDone" onclick="setStatus('done')">入金済み</button>
@@ -464,7 +498,19 @@ header h1{font-size:1.15rem;font-weight:700}.header-right{display:flex;gap:6px}
     </div>
   </div>
 </div>
+<!-- 立替の精算（背景クリックでは閉じない） -->
+<div class="dialog-overlay" id="settleDialog">
+  <div class="dialog-box" style="text-align:left;max-height:90vh;overflow-y:auto">
+    <h3 id="settleTitle" style="text-align:center">立替の精算</h3>
+    <div id="settleList" style="margin-bottom:12px"></div>
+    <div class="form-group"><label class="form-label">支払う口座</label><select id="settleAccount" class="form-input"><option value="現金">現金</option><option value="通帳">通帳</option></select></div>
+    <div class="form-group"><label class="form-label">精算日</label><input id="settleDate" class="form-input" type="date"></div>
+    <div id="settleTotal" style="font-size:.9rem;font-weight:800;margin-bottom:14px;text-align:center"></div>
+    <div class="dialog-btns"><button class="btn-keep" onclick="closeSettle()">キャンセル</button><button class="btn-reload" onclick="doSettle()">精算する</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
+<div id="printReport"></div>
 <script src="/vendor/chart.umd.min.js" async></script>
 <script src="/vendor/xlsx.full.min.js" async></script>
 <script>
@@ -476,6 +522,8 @@ const ALL_DENOMS=[...COINS.map(d=>({...d,type:'coin'})),...BILLS.map(d=>({...d,t
 const DENOM_LABEL=Object.fromEntries(ALL_DENOMS.map(d=>[d.v,d.l]));
 const DEFAULT_CATS=['部費','交通費','食費','備品','印刷費','娯楽費','助成金','その他'];
 const MAX_AMT=9999999999;
+// 団体名と年度の開始月（日本の部活は4月始まりが多い）。openingByFy は締める前の「前年度繰越金」の手入力（下書き）
+const DEFAULT_SETTINGS={orgName:'',fyStartMonth:4};
 // 操作ログは全件をメインデータに持つと、保存や同期のたびに送るデータが際限なく膨らむ。直近だけ持ち、古い分はサーバーの保管庫（/api/audit）へ逃がす。
 const AUDIT_INLINE_MAX=300, AUDIT_RESTORE_MAX=10000;
 // 領収書の写真は端末の IndexedDB とクラウド（/api/receipt）に置き、取引には id だけを持たせる。localStorage（約5MB）に画像を入れると数十枚で満杯になる。
@@ -502,6 +550,8 @@ let currentFilter='all',editingId=null,modalType='income',modalStatus='done',mod
 let searchActive=false,searchFilters={},modalReceiptIds=[],quickReceiptTxId=null,previewReceiptId=null,previewReceiptIndex=0;
 let currentPeriod='month',periodFrom='',periodTo='';
 let donutChart=null,barChart=null;
+// 年度決算・立替精算。fiscalYears は締めた年度の記録（スナップショット）、settlements は立替金の精算記録
+let settings={...DEFAULT_SETTINGS,openingByFy:{}},fiscalYears=[],settlements=[],fiscalSel=0,settleMember='';
 let backupEncFile=null,restoreMode='merge';
 let deviceName=localStorage.getItem('circle_dname')||'';
 // 領収書: 一覧用サムネイル（原寸はメモリに持たない）、サーバーにも無かった id の記録、旧形式の画像→id の対応、IndexedDB が使えない時の退避先。
@@ -520,8 +570,11 @@ const escJs=s=>esc(JSON.stringify(String(s)));
 function isImageDataUrl(s){return typeof s==='string'&&/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s);}
 const isReceiptId=s=>typeof s==='string'&&/^r[0-9a-f]{32}$/.test(s);
 const formatYen=n=>Number(n).toLocaleString('ja-JP');
+const SETTLED_MSG='⚠ 精算済みです。先に精算を取り消してください';
 const CASH_SHORT_MSG='⚠ 現金の枚数が足りないため取り消せません（現金タブの枚数を確認してください）';
-const todayStr=()=>new Date().toISOString().slice(0,10);
+// 日付は端末の地域の暦で作る。toISOString は世界標準時なので、日本の0〜9時は前日になり、年度や月の境目で集計がずれる
+const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const todayStr=()=>ymd(new Date());
 function formatDate(d){const dt=typeof d==='string'?new Date(d):d;return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 async function sha256(str){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');}
@@ -592,7 +645,16 @@ function migrateTx(tx){
   const old=[...(Array.isArray(tx.receipts)?tx.receipts:tx.receipts?[tx.receipts]:[]),...(tx.receipt?[tx.receipt]:[]),...(Array.isArray(tx._legacyReceipts)?tx._legacyReceipts:[])].filter(isImageDataUrl);
   if(old.length)tx._legacyReceipts=[...new Set(old)];else delete tx._legacyReceipts;
   delete tx.receipt;delete tx.receipts;
+  // イベント・立替者・精算の id は任意項目。空は持たない（持つと、無い取引との比較で「変更あり」と誤認する）
+  ['event','paidBy','settlementId'].forEach(k=>{if(tx[k]===undefined||tx[k]===null||tx[k]==='')delete tx[k];});
   return tx;
+}
+// 設定の読み込み。壊れた値は既定に戻す。他の項目はそのまま持ち越す（新しい版が足した設定を落とさない）
+function normalizeSettings(x){
+  x=x&&typeof x==='object'&&!Array.isArray(x)?x:{};
+  const m=Number(x.fyStartMonth),ob={};
+  if(x.openingByFy&&typeof x.openingByFy==='object')for(const[k,v]of Object.entries(x.openingByFy)){const n=Number(v);if(/^\d{4}$/.test(k)&&v!==null&&v!==''&&Number.isInteger(n))ob[k]=n;}
+  return{...x,orgName:typeof x.orgName==='string'?x.orgName:'',fyStartMonth:Number.isInteger(m)&&m>=1&&m<=12?m:4,openingByFy:ob};
 }
 
 // ===== MERGE (3-way) =====
@@ -625,13 +687,17 @@ function mergeById(base,local,server,{keyOf,cmp,onBoth,label,localFirst},notes){
 // 集金プロジェクトの突き合わせキー。id の無い古いプロジェクトは作成日時で見分ける。編集で振る id も作成日時から作るので（saveCollectProject）、
 // 編集前（id 無し）と編集後（id あり）で同じキーになり、他の端末で付けた支払い済みの印を落とさない
 const projKey=p=>p.id||(p.createdAt?'p:'+p.createdAt:'n:'+p.name);
+// 取引の「イベント・立替者・精算の id」は、両方の端末で同じ取引が変わっていても、自分が触っていない項目は相手の値を残す
+// （片方でイベントを直し、もう片方が精算した時に、精算の印を落とすと二重に精算できてしまう）
+const TX_LINK_KEYS=['event','paidBy','settlementId'];
+const onBothTx=(l,sv,b)=>{const m={...l};TX_LINK_KEYS.forEach(k=>{if(canon(l[k])===canon(b&&b[k])){if(sv[k]===undefined)delete m[k];else m[k]=sv[k];}});return m;};
 function mergeThreeWay(base,local,server){
   const notes=[],noBase=!base;base=base||{};local=local||{};server=server||{};
   const arr=x=>Array.isArray(x)?x:[],num=x=>Number(x)||0,obj=x=>x&&typeof x==='object'&&!Array.isArray(x)?x:{};
   // base が無い（古い端末）時は「base＝空」として扱う。削除は検出できず、消したはずの取引が戻り得る
   if(noBase)notes.push({kind:'no_base'},{kind:'cash_unverified'});
   const cmpTx=t=>migrateTx({...t,id:t.id||'-'});
-  const transactions=mergeById(arr(base.transactions),arr(local.transactions),arr(server.transactions),{keyOf:t=>t.id||'noid|'+canon(t),cmp:cmpTx,onBoth:l=>l,label:t=>`${t.summary||''} ¥${t.amount}`,localFirst:true},notes);
+  const transactions=mergeById(arr(base.transactions),arr(local.transactions),arr(server.transactions),{keyOf:t=>t.id||'noid|'+canon(t),cmp:cmpTx,onBoth:onBothTx,label:t=>`${t.summary||''} ¥${t.amount}`,localFirst:true},notes);
   // 枚数・残高は「今いくらあるか」。server に自分の増減（local−base）を足す。0未満は0にして知らせる（負の枚数は作れない）
   const mergeNum=(b,l,sv,what)=>{if(noBase)return l;const v=sv+(l-b);if(v<0){notes.push({kind:'clamped',what,value:v});return 0;}return v;};
   const bc=obj(base.counts),lc=obj(local.counts),sc=obj(server.counts),counts={};
@@ -640,11 +706,21 @@ function mergeThreeWay(base,local,server){
   const categories=mergeSet(arr(base.categories),arr(local.categories),arr(server.categories));
   const bb=obj(base.budgets),lb=obj(local.budgets),sb=obj(server.budgets),budgets={};
   new Set([...Object.keys(bb),...Object.keys(lb),...Object.keys(sb)]).forEach(k=>{const v=canon(lb[k])!==canon(bb[k])?lb[k]:sb[k];if(v!==undefined)budgets[k]=v;});
+  // 設定はキーごとの3者マージ（予算と同じ）。base に無いキーは既定値を基準にする（古い端末の基準に、既定値の設定が「変更」と映って他の端末の設定を潰さないため）。繰越金の手入力は年度ごとに分けて比べる
+  const sb0=obj(base.settings),sl0=obj(local.settings),ss0=obj(server.settings),settingsM={};
+  const pick=(bv,lv,sv)=>lv===undefined||canon(lv)===canon(bv)?sv:lv;
+  new Set([...Object.keys(sb0),...Object.keys(sl0),...Object.keys(ss0)]).forEach(k=>{
+    if(k==='openingByFy'){const bo=obj(sb0[k]),lo=obj(sl0[k]),so=obj(ss0[k]),o={};new Set([...Object.keys(bo),...Object.keys(lo),...Object.keys(so)]).forEach(y=>{const v=canon(lo[y])!==canon(bo[y])?lo[y]:so[y];if(v!==undefined)o[y]=v;});settingsM[k]=o;return;}
+    const v=pick(sb0[k]===undefined?DEFAULT_SETTINGS[k]:sb0[k],sl0[k],ss0[k]);if(v!==undefined)settingsM[k]=v;
+  });
+  const withId=a=>arr(a).filter(x=>x&&x.id);
+  const fiscalYears=mergeById(withId(base.fiscalYears),withId(local.fiscalYears),withId(server.fiscalYears),{keyOf:f=>f.id,cmp:f=>f,onBoth:l=>l,label:f=>`${f.fy}年度`,localFirst:false},notes);
+  const settlements=mergeById(withId(base.settlements),withId(local.settlements),withId(server.settlements),{keyOf:x=>x.id,cmp:x=>x,onBoth:l=>l,label:x=>`${x.member||''} ¥${x.amount}`,localFirst:false},notes);
   const isMem=c=>c&&c._type==='members',mem=a=>arr(a).filter(isMem),prj=a=>arr(a).filter(c=>c&&!c._type);
   const members=mergeSet(...[base,local,server].map(d=>mem(d.collections).flatMap(m=>arr(m.list))));
   const projects=mergeById(prj(base.collections),prj(local.collections),prj(server.collections),{keyOf:projKey,cmp:p=>({...p,paid:[...arr(p.paid)].sort()}),onBoth:(l,sv,b)=>({...l,paid:mergeSet(b&&b.paid,l.paid,sv.paid)}),label:p=>p.name||'',localFirst:false},notes);
   const collections=[...(members.length||mem(local.collections).length||mem(server.collections).length?[{_type:'members',list:members}]:[]),...projects];
-  return{data:{...server,...local,counts,bankBalance,transactions,categories,budgets,collections,auditLog:mergeAudit(arr(local.auditLog),arr(server.auditLog)),cashHistory:mergeCashHistory(local.cashHistory,server.cashHistory),savedAt:new Date().toISOString()},notes};
+  return{data:{...server,...local,counts,bankBalance,transactions,categories,budgets,settings:normalizeSettings(settingsM),fiscalYears,settlements,collections,auditLog:mergeAudit(arr(local.auditLog),arr(server.auditLog)),cashHistory:mergeCashHistory(local.cashHistory,server.cashHistory),savedAt:new Date().toISOString()},notes};
 }
 // 現金の保存履歴: time をキーに和集合、新しい順、50件まで
 function mergeCashHistory(...lists){const seen=new Set();return lists.flatMap(l=>Array.isArray(l)?l:[]).filter(e=>{if(!e||typeof e.time!=='string'||seen.has(e.time))return false;seen.add(e.time);return true;}).sort((a,b)=>b.time.localeCompare(a.time)).slice(0,50);}
@@ -658,7 +734,7 @@ function toastMerged(notes){showToast('🔀 両方の変更をまとめて保存
 function buildPayload(){
   // 旧形式の画像は、クラウドへ送り終える（finishLegacyMigration）までは送信データから外さない。外すと、移行が途中で止まった時にクラウド上の唯一の原本を失う
   const txs=transactions.map(({_legacyReceipts,...tx})=>_legacyReceipts&&_legacyReceipts.length?{...tx,receipts:_legacyReceipts}:tx);
-  return{counts:{...counts},bankBalance,transactions:txs,categories:[...categories],budgets:{...budgets},collections:[...collections],auditLog:[...auditLog],cashHistory:[...cashHistory],savedAt:new Date().toISOString()};
+  return{counts:{...counts},bankBalance,transactions:txs,categories:[...categories],budgets:{...budgets},settings:{...settings,openingByFy:{...settings.openingByFy}},fiscalYears:fiscalYears.map(f=>({...f})),settlements:settlements.map(x=>({...x})),collections:[...collections],auditLog:[...auditLog],cashHistory:[...cashHistory],savedAt:new Date().toISOString()};
 }
 function getToken(){return sessionStorage.getItem('circle_token');}
 // 保存先が使えないことを利用者に見える形で伝える。黙って失敗させると原本を失う。
@@ -874,6 +950,9 @@ function applyData(data){
   transactions=(data.transactions||[]).map(t=>migrateTx({...t}));
   categories=data.categories?.length?[...data.categories]:[...DEFAULT_CATS];
   budgets={...(data.budgets||{})};collections=(data.collections||[]).map(c=>({...c}));auditLog=[...(data.auditLog||[])];
+  settings=normalizeSettings(data.settings);
+  fiscalYears=(Array.isArray(data.fiscalYears)?data.fiscalYears:[]).filter(f=>f&&f.id).map(f=>({...f}));
+  settlements=(Array.isArray(data.settlements)?data.settlements:[]).filter(x=>x&&x.id).map(x=>({...x}));
   // 現金の保存履歴は旧版では端末にだけあった。残っていれば取り込む（クラウドへ送れた時に persist が端末の分を消す）
   cashHistory=mergeCashHistory(data.cashHistory,legacyHistory());bankEditFrom=null;
   if(data.savedAt)document.getElementById('savedAt').textContent='最終保存: '+formatDate(new Date(data.savedAt));
@@ -965,7 +1044,7 @@ function calcDenom(){
 // ===== BANK TAB =====
 function onBankBalanceChange(){if(bankEditFrom===null)bankEditFrom=bankBalance;bankBalance=Math.max(0,parseInt(document.getElementById('bankBalanceInput').value)||0);schedulePersist();}
 function setFilter(f,btn){currentFilter=f;searchActive=false;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTxList();document.getElementById('searchPanel').classList.remove('open');}
-function toggleSearch(btn){document.getElementById('searchPanel').classList.toggle('open');btn.classList.toggle('active');updateCatFilter();}
+function toggleSearch(btn){document.getElementById('searchPanel').classList.toggle('open');btn.classList.toggle('active');updateCatFilter();updateEventFilter();}
 function getFilteredTx(){
   let list=transactions.filter(tx=>{
     if(currentFilter==='income')return tx.type==='income';
@@ -974,7 +1053,7 @@ function getFilteredTx(){
     return true;
   });
   if(searchActive){
-    const{text,cat,from,to,min,max,account}=searchFilters;
+    const{text,cat,from,to,min,max,account,event}=searchFilters;
     if(text)list=list.filter(t=>t.summary?.includes(text)||t.payee?.includes(text));
     if(cat)list=list.filter(t=>t.category===cat);
     if(from)list=list.filter(t=>t.date>=from);
@@ -982,15 +1061,16 @@ function getFilteredTx(){
     if(min)list=list.filter(t=>t.amount>=parseInt(min));
     if(max)list=list.filter(t=>t.amount<=parseInt(max));
     if(account)list=list.filter(t=>t.account===account);
+    if(event)list=list.filter(t=>t.event===event);
   }
   return list.sort((a,b)=>b.date.localeCompare(a.date));
 }
 function applySearch(){
   searchActive=true;
-  searchFilters={text:document.getElementById('srchText').value.trim(),cat:document.getElementById('srchCat').value,from:document.getElementById('srchFrom').value,to:document.getElementById('srchTo').value,min:document.getElementById('srchMin').value,max:document.getElementById('srchMax').value,account:document.getElementById('srchAccount').value};
+  searchFilters={text:document.getElementById('srchText').value.trim(),cat:document.getElementById('srchCat').value,from:document.getElementById('srchFrom').value,to:document.getElementById('srchTo').value,min:document.getElementById('srchMin').value,max:document.getElementById('srchMax').value,account:document.getElementById('srchAccount').value,event:document.getElementById('srchEvent').value};
   renderTxList();
 }
-function clearSearch(){['srchText','srchCat','srchFrom','srchTo','srchMin','srchMax','srchAccount'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});searchActive=false;searchFilters={};renderTxList();}
+function clearSearch(){['srchText','srchCat','srchFrom','srchTo','srchMin','srchMax','srchAccount','srchEvent'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});searchActive=false;searchFilters={};renderTxList();}
 function updateCatFilter(){const sel=document.getElementById('srchCat');sel.innerHTML='<option value="">すべて</option>'+categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');}
 function updateSummary(){
   const calc=(t,s)=>transactions.filter(x=>x.type===t&&x.status===s).reduce((a,x)=>a+x.amount,0);
@@ -1001,7 +1081,7 @@ function updateSummary(){
 }
 function renderTxList(){
   const list=document.getElementById('txList');const filtered=getFilteredTx();
-  if(!filtered.length){list.innerHTML='<div class="tx-empty">取引がありません<br><small>＋ボタンで追加できます</small></div>';updateSummary();return;}
+  if(!filtered.length){list.innerHTML='<div class="tx-empty">取引がありません<br><small>＋ボタンで追加できます</small></div>';updateSummary();renderAdvances();return;}
   list.innerHTML=filtered.map(tx=>{
     const isDone=tx.status==='done',isInc=tx.type==='income';
     const stCls=isDone?(isInc?'done-income':'done-payment'):(isInc?'pending-income':'pending-payment');
@@ -1015,9 +1095,12 @@ function renderTxList(){
     const recActions=`<button class="tx-rec-btn" onclick="quickAttachFromFolder(${jid})">${recCount?'➕ 追加':'🖼 写真'}</button>${recCount?`<button class="tx-rec-btn" onclick="downloadReceiptById(${jid})">📥 保存</button>`:''}`;
     const actions=`<button class="tx-edit-btn" onclick="editTx(${jid})">編集</button><button class="tx-del-btn" onclick="deleteTx(${jid})">削除</button>${recActions}`;
     const tcls=isInc?'income':'payment';
-    return `<div class="tx-item"><div><span class="tx-type-badge ${tcls}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${esc(tx.date)}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${tx.account&&tx.account!=='未設定'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tcls}">¥${formatYen(tx.amount)}</span><button class="tx-status-btn ${stCls}" onclick="toggleTxStatus(${jid})">${stLbl}</button></div></div>`;
+    const evTag=tx.event?`<span class="tx-event">🎪 ${esc(tx.event)}</span>`:'';
+    // 立替は立て替えた時点で支出済み。状態は切り替えず、精算の有無をバッジで示す
+    const stBtn=tx.account==='立替'?advBadge(tx):`<button class="tx-status-btn ${stCls}" onclick="toggleTxStatus(${jid})">${stLbl}</button>`;
+    return `<div class="tx-item"><div><span class="tx-type-badge ${tcls}">${isInc?'入金':'支払'}</span></div><div class="tx-body"><div class="tx-summary">${esc(tx.summary)}</div><div class="tx-meta">${esc(tx.date)}${tx.payee?` · ${esc(tx.payee)}`:''}${catTag}${evTag}${tx.account&&tx.account!=='未設定'&&tx.account!=='立替'?` · ${esc(tx.account)}`:''}</div>${recThumb}<div class="tx-row-actions">${actions}</div></div><div class="tx-right"><span class="tx-amount ${tcls}">¥${formatYen(tx.amount)}</span>${stBtn}</div></div>`;
   }).join('');
-  updateSummary();
+  updateSummary();renderAdvances();
   ensureThumbs(filtered.map(t=>(t.receiptIds||[])[0]).filter(Boolean));
 }
 // 現金の増減を元に戻す。支払いは使った枚数を戻し、入金は受け取った枚数を引く。入金の取消しで枚数が足りない金種があれば、何も変えず false
@@ -1030,6 +1113,8 @@ function revertCashEffect(tx,c){
 }
 function toggleTxStatus(id){
   const tx=transactions.find(t=>t.id===id);if(!tx)return;
+  if(tx.account==='立替'){showToast('立替の取引は精算で処理します');return;}
+  const gc=guardClosed([tx.date]);if(gc===null)return;
   const wasDone=tx.status==='done';let hint=false;
   if(!wasDone&&!tx.applied){
     if(tx.account==='現金'&&tx.type==='payment'){
@@ -1053,12 +1138,15 @@ function toggleTxStatus(id){
     }else{tx.applied=false;}
     tx.status='pending';
   }else{tx.status=wasDone?'pending':'done';}
-  persist();renderTxList();addAudit('ステータス変更',`${tx.summary} → ${tx.status}`);
+  addAudit('ステータス変更',`${tx.summary} → ${tx.status}`);auditClosed(gc,`ステータス変更 ${tx.summary}`);
+  persist();renderTxList();
   if(hint)showToast('💡 現金タブの枚数も更新してください');
 }
 function deleteTx(id){
-  if(!confirm('この取引を削除しますか？'))return;
   const tx=transactions.find(t=>t.id===id);
+  if(tx?.settlementId){showToast(SETTLED_MSG);return;}
+  if(!confirm('この取引を削除しますか？'))return;
+  const gc=guardClosed([tx?.date]);if(gc===null)return;
   if(tx?.applied){
     if(tx.account==='現金'&&tx.cashBreakdown){
       if(!revertCashEffect(tx,counts)){showToast(CASH_SHORT_MSG);return;}
@@ -1069,7 +1157,8 @@ function deleteTx(id){
     }
   }
   transactions=transactions.filter(t=>t.id!==id);
-  persist();renderTxList();showToast('削除しました');if(tx)addAudit('取引削除',tx.summary);
+  if(tx){addAudit('取引削除',tx.summary);auditClosed(gc,`取引削除 ${tx.summary}`);}
+  persist();renderTxList();showToast('削除しました');
 }
 
 // ===== TX MODAL =====
@@ -1080,6 +1169,8 @@ function openModal(id=null){
   document.getElementById('formSummary').value=tx?tx.summary:'';
   document.getElementById('formPayee').value=tx?tx.payee:'';
   document.getElementById('formAmount').value=tx?tx.amount:'';
+  document.getElementById('formEvent').value=tx?.event||'';document.getElementById('formPaidBy').value=tx?.paidBy||'';
+  updateEventList();updatePaidByList();
   setType(tx?tx.type:'income');setStatus(tx?tx.status:'done');setAccount(tx?tx.account:'現金');
   // 編集時は前回受け取った内訳を入力欄に戻す（無ければ空にする）
   const rb=tx&&tx.type==='income'&&tx.applied&&tx.account==='現金'?tx.cashBreakdown:null;
@@ -1097,6 +1188,9 @@ function setType(t){
   document.getElementById('typePayment').className='type-toggle-btn'+(t==='payment'?' active-payment':'');
   document.getElementById('formPayeeLabel').textContent=t==='income'?'受取先':'支払先';
   document.getElementById('statusLabel').textContent=t==='income'?'ステータス（入金）':'ステータス（支払い）';
+  // 立替は支払いの時だけ。入金に切り替えたら現金へ戻す
+  document.getElementById('accAdv').style.display=t==='payment'?'':'none';
+  if(t==='income'&&modalAccount==='立替')setAccount('現金');
   setStatus(modalStatus);
 }
 function setStatus(s){
@@ -1108,9 +1202,13 @@ function setStatus(s){
   updateRecvUi();
 }
 function setAccount(a){
+  if(a==='立替'&&modalType!=='payment')a='現金';
   modalAccount=a;
-  ['accCash','accBank','accOther'].forEach(id=>document.getElementById(id).classList.remove('sel'));
-  document.getElementById(a==='現金'?'accCash':a==='通帳'?'accBank':'accOther').classList.add('sel');
+  ['accCash','accBank','accOther','accAdv'].forEach(id=>document.getElementById(id).classList.remove('sel'));
+  document.getElementById(a==='現金'?'accCash':a==='通帳'?'accBank':a==='立替'?'accAdv':'accOther').classList.add('sel');
+  const adv=a==='立替';
+  document.getElementById('advGroup').style.display=adv?'':'none';document.getElementById('statusGroup').style.display=adv?'none':'';
+  if(adv)setStatus('done'); // 立替は立て替えた時点で部の支出。未払いにはしない
   updateRecvUi();
 }
 // 入金・現金・入金済みの時だけ「受け取った内訳」（金種ごとの枚数、任意）を出す。入れると現金タブの枚数に足す
@@ -1133,7 +1231,16 @@ function saveTx(){
   if(!amt||amt<=0||isNaN(amt)){showToast('⚠ 金額を入力してください');return;}
   if(amt>MAX_AMT){showToast('⚠ 金額が上限を超えています');return;}
   const prev=editingId?transactions.find(t=>t.id===editingId):null;
-  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:false,cashBreakdown:null,receiptIds:[...modalReceiptIds],createdAt:prev?.createdAt||new Date().toISOString()};
+  const advOn=modalAccount==='立替'&&modalType==='payment',paidBy=document.getElementById('formPaidBy').value.trim(),ev=document.getElementById('formEvent').value.trim();
+  if(advOn&&!paidBy){showToast('⚠ 立て替えた人を入力してください');return;}
+  const tx={id:editingId||crypto.randomUUID(),type:modalType,summary,payee:document.getElementById('formPayee').value.trim(),amount:amt,status:advOn?'done':modalStatus,date:document.getElementById('formDate').value||todayStr(),account:modalAccount,category:getSelectedCat(),applied:false,cashBreakdown:null,receiptIds:[...modalReceiptIds],createdAt:prev?.createdAt||new Date().toISOString()};
+  if(ev)tx.event=ev;if(advOn)tx.paidBy=paidBy;
+  // 精算済みの取引は、精算の根拠（金額・口座・立てた人）を変えさせない。摘要・カテゴリ・日付・写真・イベントは変えてよい
+  if(prev?.settlementId){
+    if(tx.amount!==prev.amount||tx.account!==prev.account||tx.type!==prev.type||(tx.paidBy||'')!==(prev.paidBy||'')){showToast(SETTLED_MSG);return;}
+    tx.settlementId=prev.settlementId;
+  }
+  const gc=guardClosed([prev?.date,tx.date]);if(gc===null)return;
   // 写真は modalReceiptIds がそのまま正（全部消したら0枚で保存される）。旧形式の画像は送信が終わるまで失わないよう引き継ぐ
   if(prev?._legacyReceipts)tx._legacyReceipts=prev._legacyReceipts;
   // 前回の効果を戻してから新しい効果を適用する。検証がすべて通るまで本物の枚数・残高は触らない（途中で中止しても元のまま）
@@ -1166,7 +1273,7 @@ function saveTx(){
   if(tmpBank!==bankBalance){bankBalance=tmpBank;document.getElementById('bankBalanceInput').value=bankBalance;}
   if(editingId){const i=transactions.findIndex(t=>t.id===editingId);if(i>=0)transactions[i]=tx;}else transactions.unshift(tx);
   // 操作ログは保存より先に積む（後に積むと次の保存まで送られない）
-  addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);
+  addAudit(editingId?'取引更新':'取引追加',`${tx.summary} ¥${formatYen(tx.amount)}`);auditClosed(gc,`${editingId?'取引更新':'取引追加'} ${tx.summary}`);
   rcDirty();persist();renderTxList();closeModal();showToast(editingId?'✏ 更新しました':'✅ 追加しました');editingId=null;uploadPendingReceipts();
   // 成功のトーストに重ならないよう、少し後に出す
   if(hint)setTimeout(()=>showToast('💡 現金タブの枚数も更新してください（内訳を入れると自動で足せます）'),2600);
@@ -1450,7 +1557,7 @@ async function downloadReceiptById(id,index){
   const src=await getFullReceipt(list[idx]);
   if(!src){if(w)w.close();showToast('⚠ この写真はまだクラウドにありません（撮影した端末からの送信待ちです）');return;}
   if(ios){if(w)w.document.write(`<body style="margin:0"><img src="${src}" style="max-width:100%">`);return;}
-  const a=document.createElement('a');a.href=src;a.download='receipt_'+(tx.date||new Date().toISOString().slice(0,10))+(list.length>1?`_${idx+1}`:'')+'.jpg';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  const a=document.createElement('a');a.href=src;a.download='receipt_'+(tx.date||todayStr())+(list.length>1?`_${idx+1}`:'')+'.jpg';document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function downloadReceipt(){if(previewReceiptId!=null)downloadReceiptById(previewReceiptId,previewReceiptIndex);}
 function downloadAllReceiptsForCurrent(){
@@ -1482,12 +1589,280 @@ function switchTab(tab){
   if(tab==='collect')renderCollection();
 }
 
+// ===== FISCAL（年度決算）=====
+// 年度は開始月から12か月（4月始まりなら 2026年度＝2026-04-01〜2027-03-31）。年度の名前は開始年。sm を渡せば設定に依らず計算できる
+const pad2=n=>String(n).padStart(2,'0');
+function fyRange(fy,sm=settings.fyStartMonth){const em=sm===1?12:sm-1,ey=sm===1?fy:fy+1,last=new Date(Date.UTC(ey,em,0)).getUTCDate();return[`${fy}-${pad2(sm)}-01`,`${ey}-${pad2(em)}-${pad2(last)}`];}
+function fyOf(date,sm=settings.fyStartMonth){const y=+String(date).slice(0,4),m=+String(date).slice(5,7);return m>=sm?y:y-1;}
+const fyLabel=fy=>`${fy}年度`;
+const jpDate=d=>{const[y,m,dd]=String(d).split('-').map(Number);return`${y}年${m}月${dd}日`;};
+const yen=n=>'¥'+formatYen(n),yenS=n=>(n<0?'-':'')+'¥'+formatYen(Math.abs(n));
+const fiscalData=()=>({transactions,settlements,fiscalYears,counts,bankBalance,today:todayStr()});
+// 決算の計算（副作用なし）。data＝{transactions,settlements,fiscalYears,counts,bankBalance,today}（settings / openingByFy / fyStartMonth は省略すれば今の設定）。
+// 締め済みの年度は計算せず、締めた時の記録をそのまま返す（後から取引を直しても提出済みの決算は動かない）。
+// 収入・支出の部は「済み」だけ。立替は立て替えた時点で支出（精算は支出ではない）。未処理は注記だけ。
+function computeFiscalReport(fy,data){
+  const S=data.settings||settings,sm=data.fyStartMonth||S.fyStartMonth||4,[from,to]=fyRange(fy,sm);
+  const fys=data.fiscalYears||[],snap=fys.find(f=>f.fy===fy);
+  if(snap)return snap;
+  const txs=data.transactions||[],sts=data.settlements||[],ob=data.openingByFy||S.openingByFy||{};
+  const inFy=t=>t.date>=from&&t.date<=to,done=t=>t.status==='done';
+  const part=type=>{const m=new Map();let total=0;txs.filter(t=>inFy(t)&&done(t)&&t.type===type).forEach(t=>{const k=t.category||'未分類',e=m.get(k)||{category:k,amount:0,count:0};e.amount+=t.amount;e.count++;total+=t.amount;m.set(k,e);});return{items:[...m.values()].sort((a,b)=>b.amount-a.amount),total};};
+  const income=part('income'),payment=part('payment');
+  // 前年度繰越金: 前年度が締め済みならその次年度繰越金。無ければ手入力（下書き）。どちらも無ければ null
+  const prev=fys.find(f=>f.fy===fy-1),man=ob[fy]===undefined||ob[fy]===null||ob[fy]===''?NaN:Number(ob[fy]);
+  const openingFrom=prev&&prev.closing!=null?'prev':Number.isInteger(man)?'manual':null;
+  const opening=openingFrom==='prev'?prev.closing:openingFrom==='manual'?man:null;
+  const closing=opening===null?null:opening+income.total-payment.total;
+  const pend=type=>{const l=txs.filter(t=>inFy(t)&&!done(t)&&t.type===type);return{count:l.length,total:l.reduce((a,t)=>a+t.amount,0)};};
+  const un=txs.filter(t=>inFy(t)&&done(t)&&(t.account||'未設定')==='未設定'),unI=un.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0),unP=un.filter(t=>t.type==='payment').reduce((a,t)=>a+t.amount,0);
+  // 残高照合: 今の現金＋通帳から、年度末より後の動き（済みの入金・支払い・精算）を戻して「年度末時点」を推定する
+  const c=data.counts||{},cashNow=ALL_DENOMS.reduce((a,d)=>a+d.v*(Number(c[d.v])||0),0),bankNow=Number(data.bankBalance)||0;
+  let aC=0,aB=0;
+  txs.forEach(t=>{if(!done(t)||t.date<=to)return;const d=t.type==='income'?t.amount:-t.amount;if(t.account==='現金')aC+=d;else if(t.account==='通帳')aB+=d;});
+  sts.forEach(x=>{if(x.date>to){if(x.account==='現金')aC-=x.amount;else if(x.account==='通帳')aB-=x.amount;}});
+  const smap=new Map(sts.map(x=>[x.id,x]));
+  const unsettledAtEnd=txs.filter(t=>t.account==='立替'&&t.date<=to&&(()=>{const x=t.settlementId&&smap.get(t.settlementId);return!x||x.date>to;})()).reduce((a,t)=>a+t.amount,0);
+  const actualNow=cashNow+bankNow,actualAtEnd=actualNow-aC-aB;
+  return{fy,from,to,opening,openingFrom,income,payment,closing,pending:{income:pend('income'),payment:pend('payment')},unassigned:{count:un.length,income:unI,payment:unP,total:unI+unP},
+    reconcile:{actualNow,cashNow,bankNow,after:aC+aB,actualAtEnd,cashAtEnd:cashNow-aC,bankAtEnd:bankNow-aB,unsettledAtEnd,diff:closing===null?null:actualAtEnd-unsettledAtEnd-closing}};
+}
+// 「今の残高から逆算した参考値」＝今の現金＋通帳 −年度内の済みの入金（現金・通帳）＋年度内の済みの支払い（現金・通帳）＋年度内の精算額
+function openingHint(fy,data){
+  const[from,to]=fyRange(fy,data.fyStartMonth||(data.settings||settings).fyStartMonth||4),c=data.counts||{};
+  let net=0;
+  (data.transactions||[]).forEach(t=>{if(t.status!=='done'||t.date<from||t.date>to)return;if(t.account==='現金'||t.account==='通帳')net+=t.type==='income'?t.amount:-t.amount;});
+  (data.settlements||[]).forEach(x=>{if(x.date>=from&&x.date<=to)net-=x.amount;});
+  return ALL_DENOMS.reduce((a,d)=>a+d.v*(Number(c[d.v])||0),0)+(Number(data.bankBalance)||0)-net;
+}
+// 締め済みの年度に入る取引を変える時の確認。変更なし＝[]、続ける＝確認した年度の配列、やめる＝null。続けたら呼び出し側が auditClosed で記録する（保存より前に）
+function guardClosed(dates){
+  const fys=[...new Set(dates.filter(d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)).map(d=>fyOf(d)).filter(fy=>fiscalYears.some(f=>f.fy===fy)))];
+  if(!fys.length)return[];
+  if(!confirm(`締め済みの年度（${fys.map(fyLabel).join('・')}）の取引です。変更すると決算報告書と合わなくなります。続けますか？`))return null;
+  return fys;
+}
+const auditClosed=(fys,what)=>{if(fys&&fys.length)addAudit('締め済み年度の変更',`${fys.map(fyLabel).join('・')} ${what}`);};
+function setFiscalSel(v){fiscalSel=parseInt(v)||0;renderFiscal();}
+function setOrgName(v){
+  v=String(v).trim();if(v===settings.orgName)return;
+  const old=settings.orgName;settings.orgName=v;
+  addAudit('団体名変更',`${old||'（未設定）'}→${v||'（未設定）'}`);persist();renderFiscal();
+}
+function setFyStart(v){
+  const m=parseInt(v);
+  if(!(m>=1&&m<=12)||m===settings.fyStartMonth){renderFiscal();return;}
+  // 締めた年度の範囲が変わってしまうので、締めた年度が1つでもある間は変えさせない
+  if(fiscalYears.length){showToast('⚠ 締めた年度がある間は、年度の開始月を変えられません');renderFiscal();return;}
+  const old=settings.fyStartMonth;settings.fyStartMonth=m;fiscalSel=0;
+  addAudit('年度開始月変更',`${old}月→${m}月`);persist();renderReport();
+}
+function setOpening(fy,v){
+  if(fiscalYears.some(f=>f.fy===fy||f.fy===fy-1))return; // 締め済み・前年度が締め済みの時は自動で決まる
+  const t=String(v).trim(),old=settings.openingByFy[fy];let n;
+  if(t==='')n=undefined;else{n=Number(t);if(!Number.isInteger(n)||Math.abs(n)>MAX_AMT){showToast('⚠ 前年度繰越金は整数で入力してください');renderFiscal();return;}}
+  if(n===old)return;
+  if(n===undefined)delete settings.openingByFy[fy];else settings.openingByFy[fy]=n;
+  addAudit('前年度繰越金変更',`${fyLabel(fy)} ${old===undefined?'未入力':yenS(old)}→${n===undefined?'未入力':yenS(n)}`);persist();renderFiscal();
+}
+function closeFiscalYear(fy){
+  if(fiscalYears.some(f=>f.fy===fy))return;
+  const rep=computeFiscalReport(fy,fiscalData());
+  if(rep.opening===null){showToast('⚠ 前年度繰越金を入力してください');return;}
+  if(todayStr()<rep.to&&!confirm('年度の途中ですが締めますか？'))return;
+  if(rep.reconcile.diff!==0&&!confirm(`残高照合に差額（${yenS(rep.reconcile.diff)}）があります。このまま締めますか？`))return;
+  fiscalYears.push({id:'fy'+fy,fy,from:rep.from,to:rep.to,opening:rep.opening,income:rep.income,payment:rep.payment,closing:rep.closing,pending:rep.pending,unassigned:rep.unassigned,reconcile:rep.reconcile,closedAt:new Date().toISOString(),closedBy:deviceName||DEVICE_ID.slice(0,8)});
+  addAudit('年度締め',`${fyLabel(fy)} 次年度繰越金${yenS(rep.closing)}`);persist();renderReport();showToast(`🔒 ${fyLabel(fy)}を締めました`);
+}
+function unCloseFiscalYear(fy){
+  if(!fiscalYears.some(f=>f.fy===fy))return;
+  if(!confirm(`${fyLabel(fy)}の締めを取り消しますか？${fiscalYears.some(f=>f.fy===fy+1)?`\n翌年度（${fyLabel(fy+1)}）は、この年度の繰越金を前提に締め済みです。`:''}`))return;
+  fiscalYears=fiscalYears.filter(f=>f.fy!==fy);
+  addAudit('年度締めの取消し',fyLabel(fy));persist();renderReport();showToast(`🔓 ${fyLabel(fy)}の締めを取り消しました`);
+}
+function renderFiscal(){
+  const el=document.getElementById('fiscalBody');if(!el)return;
+  const cur=fyOf(todayStr()),ds=transactions.map(t=>t.date).filter(d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const lo=ds.length?Math.min(fyOf(ds[0]),cur):cur,hi=ds.length?Math.max(fyOf(ds[ds.length-1]),cur):cur,all=new Set();
+  for(let y=lo;y<=hi;y++)all.add(y);fiscalYears.forEach(f=>all.add(f.fy));
+  if(!all.has(fiscalSel))fiscalSel=cur;
+  const fy=fiscalSel,data=fiscalData(),rep=computeFiscalReport(fy,data),rec=fiscalYears.find(f=>f.fy===fy),prev=fiscalYears.find(f=>f.fy===fy-1),r=rep.reconcile;
+  const tbl=(title,p)=>`<div class="fy-sec">${title}</div><table class="fy-t">${p.items.length?p.items.map(i=>`<tr><td>${esc(i.category)}</td><td class="n">${yen(i.amount)}</td></tr>`).join(''):'<tr><td colspan="2" style="color:var(--text2)">なし</td></tr>'}<tr class="tot"><td>合計</td><td class="n">${yen(p.total)}</td></tr></table>`;
+  let opening;
+  if(rec)opening=`<b>${yenS(rec.opening)}</b>（締め済み）`;
+  else if(prev)opening=`<b>${yenS(prev.closing)}</b>（${fyLabel(fy-1)}の次年度繰越金・自動）`;
+  else{
+    const man=settings.openingByFy[fy],hint=fy===cur?openingHint(fy,data):null;
+    opening=`<input id="fyOpening" class="form-input" type="number" placeholder="前年度繰越金（円）" value="${man===undefined?'':man}" style="max-width:180px;display:inline-block" onchange="setOpening(${fy},this.value)">${hint!==null?`<div class="fy-note" style="margin-top:4px">今の残高から逆算した参考値: <b>${yenS(hint)}</b> <button class="btn-sm" onclick="setOpening(${fy},${hint})">入力欄に入れる</button></div>`:''}`;
+  }
+  const pn=rep.pending,uas=rep.unassigned,notes=[];
+  if(pn.income.count)notes.push(`未収入金 ${pn.income.count}件 ${yen(pn.income.total)}（未入金の取引。収入には入っていません）`);
+  if(pn.payment.count)notes.push(`未払金 ${pn.payment.count}件 ${yen(pn.payment.total)}（未払いの取引。支出には入っていません）`);
+  if(uas.count)notes.push(`口座が「未設定」の済み取引 ${uas.count}件（入金 ${yen(uas.income)}・支払い ${yen(uas.payment)}）。現金・預金の照合には入りません`);
+  const canClose=!rec&&rep.opening!==null;
+  el.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <select id="fyPick" class="form-input" style="width:auto" onchange="setFiscalSel(this.value)">${[...all].sort((a,b)=>b-a).map(y=>`<option value="${y}"${y===fy?' selected':''}>${fyLabel(y)}</option>`).join('')}</select>
+      <span class="fy-badge ${rec?'closed':'open'}">${rec?`🔒 締め済み（${esc(String(rec.closedAt||'').slice(0,10))}）`:'未締め'}</span>
+      <span class="fy-note">${jpDate(rep.from)}〜${jpDate(rep.to)}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="form-group" style="margin:0"><label class="form-label">団体名</label><input id="fyOrg" class="form-input" type="text" value="${esc(settings.orgName)}" placeholder="例：○○大学○○部" onchange="setOrgName(this.value)"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">年度の開始月</label><select id="fyStart" class="form-input" onchange="setFyStart(this.value)"${fiscalYears.length?' disabled':''}>${Array.from({length:12},(_,i)=>`<option value="${i+1}"${i+1===settings.fyStartMonth?' selected':''}>${i+1}月</option>`).join('')}</select></div>
+    </div>
+    ${fiscalYears.length?'<div class="fy-note" style="margin-top:4px">締めた年度がある間は、年度の開始月を変えられません。</div>':''}
+    <div class="fy-sec">前年度繰越金</div><div style="font-size:.88rem">${opening}</div>
+    ${tbl('収入の部',rep.income)}${tbl('支出の部',rep.payment)}
+    <table class="fy-t"><tr class="tot"><td>次年度繰越金</td><td class="n">${rep.closing===null?'—（前年度繰越金が未入力）':yenS(rep.closing)}</td></tr></table>
+    <div class="fy-sec">残高照合（${jpDate(rep.to)}時点の推定）</div>
+    <table class="fy-t">
+      <tr><td>現金＋預金（推定）</td><td class="n">${yenS(r.actualAtEnd)}</td></tr>
+      <tr><td class="fy-note">　うち現金 / 預金</td><td class="n fy-note">${yenS(r.cashAtEnd)} / ${yenS(r.bankAtEnd)}</td></tr>
+      <tr><td>未精算の立替金</td><td class="n">${yenS(r.unsettledAtEnd)}</td></tr>
+      <tr class="tot"><td>差額（照合 − 次年度繰越金）</td><td class="n ${r.diff?'fy-warn':''}">${r.diff===null?'—':r.diff===0?'一致（¥0）':yenS(r.diff)}</td></tr>
+    </table>
+    ${r.diff?'<div class="fy-note fy-warn">差額がある時は、現金の枚数・通帳残高・未入力の取引を確認してください</div>':''}
+    ${notes.length?`<div class="fy-sec">注記</div>${notes.map(n=>`<div class="fy-note">・${esc(n)}</div>`).join('')}`:''}
+    <div class="export-row" style="margin-top:12px">
+      ${rec?`<button class="btn-sm" onclick="unCloseFiscalYear(${fy})">締めを取り消す</button>`:`<button class="btn-sm primary" onclick="closeFiscalYear(${fy})"${canClose?'':' disabled'}>この年度を締める</button>`}
+      <button class="btn-sm" onclick="printFiscalReport(${fy})">🖨 決算報告書を印刷</button>
+    </div>
+    ${!rec&&!canClose?'<div class="fy-note" style="margin-top:6px">前年度繰越金を入力すると、この年度を締められます。</div>':''}`;
+}
+// 印刷用の会計報告書。画面には出さない #printReport に描き、印刷中だけ body に printing-report を付ける（CSS がそれ以外を隠す）。外すのは afterprint
+function renderPrintReport(fy){
+  const rep=computeFiscalReport(fy,fiscalData()),closed=fiscalYears.some(f=>f.fy===fy),r=rep.reconcile,mark=closed?'':'（未確定）',dash='—';
+  const tbl=(title,p)=>`<h2>${title}</h2><table><tr><th>科目</th><th class="n">金額（円）</th></tr>${p.items.map(i=>`<tr><td>${esc(i.category)}</td><td class="n">${yen(i.amount)}</td></tr>`).join('')||'<tr><td colspan="2">なし</td></tr>'}<tr class="tot"><td>合計</td><td class="n">${yen(p.total)}</td></tr></table>`;
+  const pn=rep.pending,uas=rep.unassigned,notes=[];
+  if(pn.income.count)notes.push(`未収入金 ${pn.income.count}件 ${yen(pn.income.total)}`);
+  if(pn.payment.count)notes.push(`未払金 ${pn.payment.count}件 ${yen(pn.payment.total)}`);
+  if(uas.count)notes.push(`口座未設定の取引 ${uas.count}件（入金 ${yen(uas.income)}・支払い ${yen(uas.payment)}）`);
+  document.getElementById('printReport').innerHTML=`<h1>${esc(settings.orgName?settings.orgName+' ':'')}${fyLabel(fy)} 会計報告書${mark}</h1>
+<div class="pr-period">${jpDate(rep.from)}〜${jpDate(rep.to)}</div>
+${tbl('収入の部',rep.income)}${tbl('支出の部',rep.payment)}
+<h2>決算</h2><table>
+<tr><td>前年度繰越金</td><td class="n">${rep.opening===null?dash:yenS(rep.opening)}</td></tr>
+<tr><td>収入合計</td><td class="n">${yen(rep.income.total)}</td></tr>
+<tr><td>支出合計</td><td class="n">${yen(rep.payment.total)}</td></tr>
+<tr class="tot"><td>次年度繰越金${mark}</td><td class="n">${rep.closing===null?dash:yenS(rep.closing)}</td></tr></table>
+<h2>次年度繰越金の内訳${mark}</h2><table>
+<tr><td>現金</td><td class="n">${yenS(r.cashAtEnd)}</td></tr>
+<tr><td>預金</td><td class="n">${yenS(r.bankAtEnd)}</td></tr>
+<tr><td>未精算の立替金（マイナス）</td><td class="n">${r.unsettledAtEnd?'-':''}${yen(r.unsettledAtEnd)}</td></tr>
+${r.diff?`<tr><td>差額（要確認）</td><td class="n">${yenS(r.diff)}</td></tr>`:''}
+<tr class="tot"><td>計</td><td class="n">${yenS(r.actualAtEnd-r.unsettledAtEnd)}</td></tr></table>
+${notes.length?`<h2>注記</h2>${notes.map(n=>`<p class="pr-note">・${esc(n)}</p>`).join('')}`:''}
+<div class="pr-sign"><p>上記のとおり報告いたします。</p><div class="pr-line">作成日 ${jpDate(todayStr())}</div><div class="pr-line">会計 ＿＿＿＿＿＿＿＿＿＿ 印</div>
+<p>上記の会計を監査した結果、適正であることを認めます。</p><div class="pr-line">会計監査 ＿＿＿＿＿＿＿＿＿＿ 印</div></div>`;
+}
+function printFiscalReport(fy){
+  renderPrintReport(fy);document.body.classList.add('printing-report');
+  try{window.print();}catch{document.body.classList.remove('printing-report');}
+}
+window.addEventListener('afterprint',()=>document.body.classList.remove('printing-report'));
+
+// ===== 立替金・精算 =====
+const isAdv=t=>t.account==='立替'&&t.type==='payment';
+function advBadge(t){
+  const x=t.settlementId&&settlements.find(s=>s.id===t.settlementId),nm=esc(t.paidBy||'');
+  if(!t.settlementId)return`<span class="tx-adv-badge">立替: ${nm}・未精算</span>`;
+  const md=x&&/^\d{4}-(\d{2})-(\d{2})$/.exec(x.date);
+  return`<span class="tx-adv-badge settled">立替: ${nm}・精算済${md?` ${+md[1]}/${+md[2]}`:''}</span>`;
+}
+function renderAdvances(){
+  const card=document.getElementById('advCard');if(!card)return;
+  const by=new Map();
+  transactions.filter(t=>isAdv(t)&&!t.settlementId).forEach(t=>{const k=t.paidBy||'',e=by.get(k)||{n:0,sum:0};e.n++;e.sum+=t.amount;by.set(k,e);});
+  card.style.display=by.size?'':'none';
+  document.getElementById('advList').innerHTML=[...by].map(([m,e])=>`<div class="adv-row"><div><b>${esc(m||'（名前なし）')}</b><div class="tx-meta">${e.n}件</div></div><div style="display:flex;align-items:center;gap:8px"><b>${yen(e.sum)}</b><button class="btn-sm primary" onclick="openSettle(${escJs(m)})">精算する</button></div></div>`).join('');
+  // 履歴は未精算が無くなっても見られる（取り消しはここから）
+  const hc=document.getElementById('settleHistCard');
+  hc.style.display=settlements.length?'':'none';
+  document.getElementById('settleHistList').innerHTML=[...settlements].sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.createdAt).localeCompare(String(a.createdAt))).map(x=>`<div class="adv-row"><div><b>${esc(x.member)}</b> ${yen(x.amount)}<div class="tx-meta">${esc(x.date)} · ${esc(x.account)} · ${(x.txIds||[]).length}件</div></div><button class="btn-sm" onclick="cancelSettlement(${escJs(x.id)})">取り消す</button></div>`).join('');
+}
+function openSettle(member){
+  settleMember=member;
+  const list=transactions.filter(t=>isAdv(t)&&!t.settlementId&&(t.paidBy||'')===member).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!list.length)return;
+  document.getElementById('settleTitle').textContent=`${member||'（名前なし）'}さんへの精算`;
+  document.getElementById('settleList').innerHTML=list.map(t=>`<label style="display:flex;gap:8px;align-items:center;font-size:.82rem;padding:5px 0"><input type="checkbox" class="settle-chk" value="${esc(t.id)}" data-amt="${t.amount}" checked onchange="updateSettleTotal()"><span style="flex:1">${esc(t.date)} ${esc(t.summary)}</span><b>${yen(t.amount)}</b></label>`).join('');
+  document.getElementById('settleAccount').value='現金';document.getElementById('settleDate').value=todayStr();
+  updateSettleTotal();document.getElementById('settleDialog').classList.add('open');
+}
+function updateSettleTotal(){
+  const sum=[...document.querySelectorAll('#settleList .settle-chk:checked')].reduce((a,x)=>a+Number(x.dataset.amt),0);
+  document.getElementById('settleTotal').textContent=`精算額の合計 ${yen(sum)}`;
+}
+function closeSettle(){document.getElementById('settleDialog').classList.remove('open');}
+// 精算は支出ではない（支出は立て替えた時点で計上済み）。現金は金種を引き、通帳は残高を引く。決算の収入・支出の部には入らない
+function doSettle(){
+  const member=settleMember,ids=new Set([...document.querySelectorAll('#settleList .settle-chk:checked')].map(x=>x.value));
+  const txs=transactions.filter(t=>ids.has(t.id)&&isAdv(t)&&!t.settlementId&&(t.paidBy||'')===member);
+  if(!txs.length){showToast('⚠ 精算する取引を選んでください');return;}
+  const amount=txs.reduce((a,t)=>a+t.amount,0),account=document.getElementById('settleAccount').value==='通帳'?'通帳':'現金';
+  const dv=document.getElementById('settleDate').value,date=/^\d{4}-\d{2}-\d{2}$/.test(dv)?dv:todayStr();
+  let bd=null;
+  if(account==='現金'){bd=calcMinCoinsFrom(amount,counts);if(!bd){showToast('⚠ 現金残高が不足しています');return;}}
+  else if(bankBalance<amount){showToast('⚠ 通帳残高が不足しています');return;}
+  const gc=guardClosed([date]);if(gc===null)return;
+  if(account==='現金'){
+    if(!confirm(`${member}さんへ ¥${formatYen(amount)} を現金で精算します。\n${formatBreakdown(bd)}\nを使用します。よろしいですか？`))return;
+    for(const[v,n]of Object.entries(bd))counts[parseInt(v)]-=n;syncInputs();
+  }else{bankBalance-=amount;document.getElementById('bankBalanceInput').value=bankBalance;}
+  const x={id:crypto.randomUUID(),date,member,account,amount,txIds:txs.map(t=>t.id),cashBreakdown:bd,createdAt:new Date().toISOString()};
+  settlements.unshift(x);txs.forEach(t=>{t.settlementId=x.id;});
+  addAudit('立替精算',`${member} ¥${formatYen(amount)}`);auditClosed(gc,`立替精算 ${member} ¥${formatYen(amount)}`);
+  persist();renderTxList();closeSettle();showToast('💴 精算しました');
+}
+function cancelSettlement(id){
+  const x=settlements.find(s=>s.id===id);if(!x)return;
+  if(!confirm(`${x.member} ¥${formatYen(x.amount)}（${x.date}）の精算を取り消しますか？\n${x.account==='現金'&&x.cashBreakdown?`${formatBreakdown(x.cashBreakdown)} を現金に戻します。`:'通帳残高に足し戻します。'}`))return;
+  const gc=guardClosed([x.date]);if(gc===null)return;
+  if(x.account==='現金'&&x.cashBreakdown){for(const[v,n]of Object.entries(x.cashBreakdown))counts[parseInt(v)]=(counts[parseInt(v)]||0)+n;syncInputs();}
+  else if(x.account==='通帳'){bankBalance+=x.amount;document.getElementById('bankBalanceInput').value=bankBalance;}
+  transactions.forEach(t=>{if(t.settlementId===id)delete t.settlementId;});
+  settlements=settlements.filter(s=>s.id!==id);
+  addAudit('立替精算の取消し',`${x.member} ¥${formatYen(x.amount)}`);auditClosed(gc,`立替精算の取消し ${x.member} ¥${formatYen(x.amount)}`);
+  persist();renderTxList();showToast('↩ 精算を取り消しました');
+}
+function updatePaidByList(){document.getElementById('paidByList').innerHTML=[...new Set([...getMembers(),...transactions.map(t=>t.paidBy).filter(Boolean)])].map(n=>`<option value="${esc(n)}">`).join('');}
+
+// ===== イベント別収支 =====
+// イベントごとに済みの入金・支出と件数。未処理は件数だけ。並びは「最後の取引日」の新しい順
+function eventSummary(txs){
+  const m=new Map();
+  for(const t of txs){
+    if(!t.event)continue;
+    let e=m.get(t.event);if(!e)m.set(t.event,e={event:t.event,income:0,payment:0,count:0,pending:0,last:''});
+    if(t.status==='done'){if(t.type==='income')e.income+=t.amount;else e.payment+=t.amount;e.count++;}else e.pending++;
+    if(t.date>e.last)e.last=t.date;
+  }
+  return[...m.values()].map(e=>({...e,diff:e.income-e.payment})).sort((a,b)=>b.last.localeCompare(a.last)||a.event.localeCompare(b.event,'ja'));
+}
+const eventNames=()=>eventSummary(transactions).map(e=>e.event);
+function updateEventList(){document.getElementById('eventList').innerHTML=eventNames().map(n=>`<option value="${esc(n)}">`).join('');}
+function updateEventFilter(){const sel=document.getElementById('srchEvent'),cur=sel.value;sel.innerHTML='<option value="">イベント：すべて</option>'+eventNames().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');sel.value=cur;}
+function renderEventSummary(txPeriod){
+  const card=document.getElementById('eventCard');if(!card)return;
+  const list=eventSummary(txPeriod);card.style.display=list.length?'':'none';
+  document.getElementById('eventBody').innerHTML=list.map(e=>`<div class="ev-row" onclick="goEvent(${escJs(e.event)})"><div style="min-width:0"><b>${esc(e.event)}</b><div class="tx-meta">${e.count}件${e.pending?`（未処理${e.pending}件）`:''} · 最終 ${esc(e.last)}</div></div><div style="text-align:right;font-size:.76rem"><div style="color:var(--income)">収入 ${yen(e.income)}</div><div style="color:var(--payment)">支出 ${yen(e.payment)}</div><div style="font-weight:800">差額 ${yenS(e.diff)}</div></div></div>`).join('');
+}
+// 行を押すと取引タブへ移り、そのイベントで絞り込んだ状態にする
+function goEvent(name){
+  switchTab('bank');
+  setFilter('all',document.querySelector('.filter-row .filter-btn'));
+  clearSearch();updateEventFilter();
+  document.getElementById('srchEvent').value=name;
+  document.getElementById('searchPanel').classList.add('open');document.getElementById('searchToggleBtn').classList.add('active');
+  applySearch();
+}
+
 // ===== REPORT =====
 function getPeriodRange(){
   const now=new Date();
   if(currentPeriod==='month')return[`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`,todayStr()];
-  if(currentPeriod==='last'){const lm=new Date(now.getFullYear(),now.getMonth()-1,1);const le=new Date(now.getFullYear(),now.getMonth(),0);return[lm.toISOString().slice(0,10),le.toISOString().slice(0,10)];}
-  if(currentPeriod==='fiscal'){const fy=now.getMonth()>=3?now.getFullYear():now.getFullYear()-1;return[`${fy}-04-01`,`${fy+1}-03-31`];}
+  if(currentPeriod==='last'){const lm=new Date(now.getFullYear(),now.getMonth()-1,1);const le=new Date(now.getFullYear(),now.getMonth(),0);return[ymd(lm),ymd(le)];}
+  if(currentPeriod==='fiscal')return fyRange(fyOf(`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`));
   if(currentPeriod==='custom')return[periodFrom||'2000-01-01',periodTo||todayStr()];
   return['2000-01-01',todayStr()];
 }
@@ -1508,7 +1883,7 @@ function renderReport(){
     <div><div style="font-size:.72rem;color:var(--text2)">入金合計</div><div style="font-size:1.1rem;font-weight:800;color:var(--income)">¥${formatYen(income)}</div></div>
     <div><div style="font-size:.72rem;color:var(--text2)">支出合計</div><div style="font-size:1.1rem;font-weight:800;color:var(--payment)">¥${formatYen(payment)}</div></div>
     <div><div style="font-size:.72rem;color:var(--text2)">収支差額</div><div style="font-size:1.1rem;font-weight:800;color:${balance>=0?'var(--income)':'var(--payment)'}">¥${formatYen(balance)}</div></div>`;
-  renderDonut(txPeriod);renderBar(txPeriod,from,to);renderBudget();
+  renderDonut(txPeriod);renderBar(txPeriod,from,to);renderBudget();renderEventSummary(txPeriod);renderFiscal();
 }
 function renderDonut(txPeriod){
   if(typeof Chart==='undefined'){document.getElementById('donutChart').parentElement.innerHTML+='<p style="text-align:center;color:var(--text2);font-size:.8rem;margin-top:8px">グラフはインターネット接続時に表示されます</p>';return;}
@@ -1569,10 +1944,10 @@ function deleteBudget(cat){if(!confirm(`「${cat}」の予算を削除します�
 // CSV の数式インジェクション対策: 文字列セルが = + - @ タブ CR で始まる時は、表計算ソフトが式として実行しないよう先頭に ' を付ける。読み込み時に外して元に戻す
 const csvCell=v=>{let t=String(v);if(typeof v==='string'&&/^[=+\-@\t\r]/.test(t))t="'"+t;return`"${t.replace(/"/g,'""')}"`;};
 const unguardCell=v=>/^'[=+\-@\t\r]/.test(v)?v.slice(1):v;
-function txToRow(t){return[t.date,t.type==='income'?'入金':'支払い',t.summary||'',t.payee||'',t.amount,t.status==='done'?'済み':'未処理',t.category||'',t.account||'',t.id];}
+function txToRow(t){return[t.date,t.type==='income'?'入金':'支払い',t.summary||'',t.payee||'',t.amount,t.status==='done'?'済み':'未処理',t.category||'',t.account||'',t.id,t.event||'',t.paidBy||''];}
 function exportCSV(){
   const BOM='﻿';
-  const header='日付,種別,摘要,支払先,金額,状態,カテゴリ,口座,ID\n';
+  const header='日付,種別,摘要,支払先,金額,状態,カテゴリ,口座,ID,イベント,立替者\n';
   const rows=transactions.map(t=>txToRow(t).map(csvCell).join(',')).join('\n');
   const blob=new Blob([BOM+header+rows],{type:'text/csv;charset=utf-8'});
   dlBlob(blob,'transactions.csv');addAudit('CSVエクスポート',`${transactions.length}件`);
@@ -1580,7 +1955,7 @@ function exportCSV(){
 function exportExcel(){
   if(typeof XLSX==='undefined'){showToast('⚠ ライブラリ読込中。少し待って再試行してください');return;}
   const wb=XLSX.utils.book_new();
-  const txData=[['日付','種別','摘要','支払先','金額','状態','カテゴリ','口座','ID'],...transactions.map(txToRow)];
+  const txData=[['日付','種別','摘要','支払先','金額','状態','カテゴリ','口座','ID','イベント','立替者'],...transactions.map(txToRow)];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(txData),'取引');
   const catData=[['カテゴリ'],...categories.map(c=>[c])];
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(catData),'カテゴリ');
@@ -1611,7 +1986,8 @@ function parseCSV(text){
   if(f!==''||row.length){row.push(f);rows.push(row);}
   return rows.filter(r=>r.length>1||r[0]!=='');
 }
-const TX_COLS=['日付','種別','摘要','支払先','金額','状態','カテゴリ','口座','ID'];
+// 末尾の2列（イベント・立替者）は後から足した。既存の9列の位置は変えない（旧形式のファイルも読める）
+const TX_COLS=['日付','種別','摘要','支払先','金額','状態','カテゴリ','口座','ID','イベント','立替者'];
 function validDate(y,m,d){const t=new Date(Date.UTC(y,m-1,d));return t.getUTCFullYear()===y&&t.getUTCMonth()===m-1&&t.getUTCDate()===d&&y>=1900&&y<=2100?`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`:null;}
 // YYYY-MM-DD（YYYY/M/D は正規化）。Excel の日付はシリアル値（数値）で来るので日付に直す。読めなければ null
 function parseDate(v){
@@ -1631,8 +2007,13 @@ function rowsToTxs(rows){
     const get=n=>{const v=col[n]>=0?r[col[n]]:undefined;return v===undefined||v===null?'':v;};
     const amount=parseAmount(get('金額')),date=parseDate(get('日付'));
     if(amount===null||date===null){bad++;continue;}
-    const txt=n=>unguardCell(String(get(n))),done=String(get('状態')).trim()==='済み';
-    txs.push({id:String(get('ID')).trim()||crypto.randomUUID(),date,type:String(get('種別')).trim()==='入金'?'income':'payment',summary:txt('摘要'),payee:txt('支払先'),amount,status:done?'done':'pending',category:txt('カテゴリ'),account:txt('口座')||'未設定',applied:done,createdAt:new Date().toISOString()});
+    const txt=n=>unguardCell(String(get(n))),type=String(get('種別')).trim()==='入金'?'income':'payment';
+    // 立替者があれば立替（支払いのみ）。立替は状態を「済み」に固定し、現金・通帳は動かさない。立替者の無い「立替」は精算できないので未設定へ。精算の id は取り込まない（精算はアプリ内の記録）
+    const pb=type==='payment'?txt('立替者').trim():'',ev=txt('イベント').trim(),done=!!pb||String(get('状態')).trim()==='済み';
+    let account=txt('口座')||'未設定';if(pb)account='立替';else if(account==='立替')account='未設定';
+    const t={id:String(get('ID')).trim()||crypto.randomUUID(),date,type,summary:txt('摘要'),payee:txt('支払先'),amount,status:done?'done':'pending',category:txt('カテゴリ'),account,applied:done,createdAt:new Date().toISOString()};
+    if(ev)t.event=ev;if(pb)t.paidBy=pb;
+    txs.push(t);
   }
   return{txs,bad};
 }
@@ -1813,9 +2194,10 @@ function togglePaid(pi,member){
   if(wasPaid){p.paid=p.paid.filter(m=>m!==member);addAudit('集金取消し',`${p.name} ${member}`);}
   else{
     p.paid.push(member);
-    if(confirm(`${member}の支払いを取引として記録しますか？`)){
+    const gcp=confirm(`${member}の支払いを取引として記録しますか？`)?guardClosed([todayStr()]):null;
+    if(gcp!==null){
       transactions.unshift({id:crypto.randomUUID(),type:'income',summary:`${p.name}（${member}）`,payee:member,amount:p.amount,status:'done',date:todayStr(),account:'現金',category:'部費',applied:false,receiptIds:[],createdAt:new Date().toISOString()});
-      renderTxList();addAudit('集金記録',`${p.name} ${member} ¥${formatYen(p.amount)}`);
+      renderTxList();addAudit('集金記録',`${p.name} ${member} ¥${formatYen(p.amount)}`);auditClosed(gcp,`集金記録 ${p.name} ${member}`);
       showToast('💡 現金タブの枚数も更新してください'); // 内訳が分からないので枚数は変えていない
     }
   }
@@ -1876,8 +2258,12 @@ async function restoreBackup(data,replace){
   try{return await restoreBackupInner(data,replace);}finally{restoring=false;}
 }
 async function restoreBackupInner(data,replace){
-  if(replace){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];}
+  // 設定は置換の時だけ戻す（マージでは今の設定を守る）。年度の記録・精算は、置換なら丸ごと、マージなら id で和集合
+  if(replace){transactions=[];categories=[...DEFAULT_CATS];budgets={};collections=[];auditLog=[];settings=normalizeSettings(data.settings);fiscalYears=[];settlements=[];}
   const added=mergeTransactions(data.transactions||[]);
+  const unionById=(cur,inc)=>{const ids=new Set(cur.map(x=>x.id));return[...cur,...inc.filter(x=>x&&x.id&&!ids.has(x.id)).map(x=>({...x}))];};
+  if(Array.isArray(data.fiscalYears))fiscalYears=unionById(fiscalYears,data.fiscalYears);
+  if(Array.isArray(data.settlements))settlements=unionById(settlements,data.settlements);
   if(data.categories)categories=[...new Set([...categories,...data.categories])];
   Object.assign(budgets,data.budgets||{});
 
@@ -1936,7 +2322,7 @@ async function restoreBackupInner(data,replace){
 function commitRestore(auditAction,auditDetail,r){
   addAudit(auditAction,auditDetail);
   persist();
-  renderCatManager();renderBudget();renderCollection();renderTxList();renderAuditLog();renderHistory();
+  renderCatManager();renderBudget();renderCollection();renderTxList();renderAuditLog();renderHistory();renderReport();
   let msg=`✅ 取引${r.added}件を追加${r.receipts?`・領収書${r.receipts}件`:''}`;
   if(r.rejected)msg+=`（画像として読めない領収書${r.rejected}件は除外）`;
   showToast(msg);

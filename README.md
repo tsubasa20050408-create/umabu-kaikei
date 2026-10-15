@@ -15,6 +15,7 @@
 | `api/receipt.js` | 領収書写真。1枚1キー（`circle:receipt:<id>`）。id は画像の SHA-256 で、書き換え不可 |
 | `api/audit.js` | 古い操作ログの保管庫（`circle:audit`、最大5000件） |
 | `api/health.js` | 設定の診断。値は出さず、有無だけを返す |
+| `index.html` の年度決算 | `settings`（団体名・年度の開始月）、`fiscalYears`（締めた年度の記録）、`settlements`（立替金の精算）を本体データに持つ |
 | `vendor/` | Chart.js・SheetJS を同梱（外部 CDN に頼らない） |
 
 ## 環境変数（Vercel）
@@ -34,7 +35,7 @@
 npm test
 ```
 
-サーバー側の処理を偽の Redis で確かめる（`test/*.test.mjs`）。画面側の処理は、ブラウザで `window.fetch` を差し替えて確かめている（リポジトリには含めていない）。
+サーバー側の処理を偽の Redis で確かめる（`test/*.test.mjs`）。画面側の処理は、ブラウザで `window.fetch` を差し替えて確かめる（`test/browser/`。手順はそこの README）。`test/` は Vercel に上げない（`.vercelignore`）。
 
 ## 2つのアプリへの反映（引き継ぐまでの運用）
 
