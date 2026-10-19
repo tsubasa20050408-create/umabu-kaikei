@@ -1,6 +1,6 @@
 # サークル会計アプリ
 
-部の現金・通帳・取引・集金・領収書写真を管理する PWA。陸上部（trackfield-kaikei）と umabu（umabu-kaikei）が、同じコードを別々のリポジトリ・Vercel・Upstash で動かしている。2つの違いは `index.html` のテーマ色だけ。
+部の現金・通帳・取引・集金・領収書写真を管理する PWA。陸上部（trackfield-kaikei・青）と umabu（umabu-kaikei・緑）が、同じコードを別々のリポジトリ・Vercel・Upstash で動かしている。2つの違いは団体の色だけ。
 
 運用担当者向けの手順（バックアップ、PIN の変更、料金、引き継ぎ）は、各団体の「引き継ぎガイド」にある。この README は手伝う人向けの技術メモ。
 
@@ -39,4 +39,4 @@ npm test
 
 ## 2つのアプリへの反映（引き継ぐまでの運用）
 
-`main` で直して `origin`（trackfield-kaikei）へ push し、同じコミットを `umabu-health` ブランチへ cherry-pick して `umabu`（umabu-kaikei）の `main` へ push する。2つのブランチの差は、`index.html` のテーマ色の7行だけ。
+`main` で直して `origin`（trackfield-kaikei）へ push し、同じコミットを `umabu-health` ブランチへ cherry-pick して `umabu`（umabu-kaikei）の `main` へ push する。2つのブランチの差は、`index.html` 先頭の「団体の色」ブロック（2行）と、`manifest.json` のテーマ色・`icon.svg` の地色だけ。色はこのブロック以外に書かない（書くと cherry-pick がぶつかる）。
