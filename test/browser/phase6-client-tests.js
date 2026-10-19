@@ -334,7 +334,7 @@ const CLOSED_MSG=y=>`締め済みの年度（${y}年度）の取引です。変�
   for(const s of['収入の部','支出の部','科目','前年度繰越金','収入合計','支出合計','次年度繰越金','次年度繰越金の内訳','現金','預金','未精算の立替金（マイナス）','注記','未収入金 1件 ¥1,000','未払金 1件 ¥2,000','上記のとおり報告いたします。','作成日','会計 ＿','印','上記の会計を監査した結果、適正であることを認めます。','会計監査 ＿','¥22,000','¥45,000','¥85,000','¥50,000'])has('5 内容: '+s,t,s);
   ok('5 内訳の現金・預金・立替',t.includes('¥34,000')&&t.includes('¥57,000')&&t.includes('-¥6,000'),t);
   eq('5 画面では #printReport は非表示',getComputedStyle(pr).display,'none');
-  const printRules=[...document.styleSheets].flatMap(s=>[...s.cssRules]).filter(r=>r.media&&r.media.mediaText.includes('print')).map(r=>r.cssText).join('\n');
+  const printRules=[...document.styleSheets].flatMap(s=>{try{return[...s.cssRules];}catch{return[];}}).filter(r=>r.media&&r.media.mediaText.includes('print')).map(r=>r.cssText).join('\n');
   has('5 印刷CSS: printing-report 以外を隠す',printRules,'body.printing-report > :not(#printReport) { display: none !important; }');
   has('5 印刷CSS: A4縦',printRules,'size: a4;');
   has('5 印刷CSS: printing-report の時だけ #printReport を表示',printRules,'body.printing-report #printReport');

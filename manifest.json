@@ -4,8 +4,8 @@
   "description": "サークルの現金・通帳・取引を一元管理",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1b4332",
-  "theme_color": "#2d6a4f",
+  "background_color": "#f6f8fb",
+  "theme_color": "#0d74ce",
   "lang": "ja",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }

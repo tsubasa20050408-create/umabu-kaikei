@@ -324,7 +324,16 @@ const clickDlg = cls => document.querySelector('#conflictDialog .' + cls).click(
   ok('5d ソースに閲覧のみ権限・canEdit が無く、circle_role は handleAuthFailure の掃除だけ', !/閲覧のみ権限|canEdit/.test(html) && (html.match(/circle_role/g) || []).length === 1);
   await reset(); transactions = [mkTx('e1')]; renderTxList();
   const h = document.getElementById('txList').innerHTML;
-  ok('5e 取引一覧は常に編集・削除・写真ボタンを出す', h.includes('編集</button>') && h.includes('削除</button>') && h.includes('🖼 写真'));
+  const row5e = document.querySelector('#txList .tx-item[onclick^="txRowClick"]');
+  ok('5e 取引一覧: 行を押すと編集できる。一覧の行には削除・写真ボタンを置かない（削除・写真の追加は編集画面）', !!row5e && !h.includes('削除</button>') && !h.includes('🖼 写真') && !document.querySelector('#txList .tx-del-btn'));
+  row5e.click();
+  ok('5e2 行を押すと編集画面（削除ボタン付き・写真の追加付き）が開く', document.getElementById('modalOverlay').classList.contains('open') && editingId === transactions[0].id && document.getElementById('modalDeleteBtn').classList.contains('visible') && !!document.getElementById('receiptGallery'));
+  confirmQ = [false]; confirms.length = 0; deleteTxFromModal(); await settle();
+  ok('5e3 編集画面の削除: confirm を断ると取引も画面もそのまま', transactions.length === 1 && confirms.length === 1 && document.getElementById('modalOverlay').classList.contains('open'));
+  deleteTxFromModal(); await settle();
+  ok('5e4 編集画面の削除: 取引が消えて画面が閉じる', transactions.length === 0 && !document.getElementById('modalOverlay').classList.contains('open'));
+  openModal();
+  ok('5e5 新規追加の画面には削除ボタンを出さない', !document.getElementById('modalDeleteBtn').classList.contains('visible')); closeModal();
   addAudit('x', 'y');
   ok('5f 新しい操作ログに user が付かない', !('user' in auditLog[0]));
 }
@@ -339,8 +348,8 @@ const clickDlg = cls => document.querySelector('#conflictDialog .' + cls).click(
   confirmQ = [false]; togglePaid(0, '太郎'); await settle();
   ok('6b 支払い済みにできる', getProjects()[0].paid.join() === '太郎');
   renderCollection();
-  const editBtn = [...document.querySelectorAll('#projectList button')].find(b => b.textContent.includes('✏ 編集'));
-  ok('6c 各カードに「✏ 編集」ボタンがある', !!editBtn);
+  const editBtn = [...document.querySelectorAll('#projectList button')].find(b => (b.getAttribute('onclick') || '').startsWith('openCollectModal') && b.textContent.includes('編集'));
+  ok('6c 各カードに「編集」ボタンがある', !!editBtn);
   const origId = p0.id, origCreated = p0.createdAt;
   editBtn.click();
   ok('6d 編集ボタンでモーダルが開き、値が入っている', document.getElementById('collectModal').classList.contains('open') && document.getElementById('cpName').value === '合宿' && document.getElementById('cpAmount').value === '3000');
@@ -416,7 +425,7 @@ const clickDlg = cls => document.querySelector('#conflictDialog .' + cls).click(
   ok('8a2 localStorage の旧キーには書かない', localStorage.getItem('circle_cash_history') === null);
   // 別端末想定
   const fromServer = clone(srv.data); cashHistory = []; setCounts({}); applyData(fromServer);
-  ok('8b 別端末で applyData すると履歴が見える（行に「↩ この状態に戻す」ボタン）', cashHistory.length === 1 && document.getElementById('historyList').textContent.includes('¥4,000') && document.getElementById('historyList').textContent.includes('↩ この状態に戻す'));
+  ok('8b 別端末で applyData すると履歴が見える（行に「↩ この状態に戻す」ボタン）', cashHistory.length === 1 && document.getElementById('historyList').textContent.includes('¥4,000') && document.getElementById('historyList').textContent.includes('この状態に戻す'));
   setCounts({ 1000: 9 }); log.length = 0; confirms.length = 0;
   document.querySelector('#historyList button').click(); await settle();
   ok('8c 「この状態に戻す」: confirm に日時と合計 → 枚数が戻り（1000×3・500×2）、画面・保存に反映', confirms.length === 1 && confirms[0].includes('¥4,000') && /\d{4}\/\d{2}\/\d{2}/.test(confirms[0]) && counts[1000] === 3 && counts[500] === 2 && document.getElementById('input_1000').value === '3' && srv.data.counts[1000] === 3 && auditCount('現金を履歴から復元') === 1, { confirms, counts: { ...counts } });

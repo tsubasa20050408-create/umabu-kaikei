@@ -162,7 +162,7 @@ const ghost = 'r' + 'e'.repeat(32);
 transactions.push(mkTx('ghost1', { receiptIds: [ghost] })); renderTxList(); await sleep(150); renderTxList(); await sleep(100);
 const ghostReqs = getsThumbs().filter(l => l.url.includes(ghost)).length;
 ok('3j サーバーに無い id は1回だけ問い合わせ、thumbMiss に記録（60秒は再取得しない）', ghostReqs === 1 && thumbMiss.has(ghost), { ghostReqs });
-ok('3k サムネイルが無い取引は同じ大きさの灰色の枠に📷（クリックでプレビュー）', /📷/.test(document.getElementById('txList').innerHTML) && document.querySelector('#txList div[onclick^="showReceipt"][title="領収書"]') !== null);
+ok('3k サムネイルが無い取引は同じ大きさの灰色の枠に画像アイコン（クリックでプレビュー）', document.querySelector('#txList .rc-ph[onclick^="showReceipt"][title="領収書"] svg') !== null);
 thumbMiss.set(ghost, Date.now() - 61000); log.length = 0; renderTxList(); await sleep(150);
 ok('3l 60秒を過ぎれば再取得する', getsThumbs().filter(l => l.url.includes(ghost)).length === 1);
 // 未読の写真をプレビューするとサーバーにも無い→案内
@@ -438,7 +438,7 @@ srv.thumbOverride[badId[2]] = 'javascript:alert(1)';
 renderTxList(); await sleep(300);
 const html = document.getElementById('txList').innerHTML;
 ok('11a 不正なサムネイルは thumbCache にも IndexedDB にも入らない', badId.every(id => !thumbCache.has(id)) && (await idbAll()).length === 0);
-ok('11b 一覧の HTML に <img> も不正な文字列も入らない（📷 の枠になる）', !document.querySelector('#txList img') && !html.includes('onerror') && !html.includes('javascript:') && !html.includes('svg+xml') && (html.match(/📷/g) || []).length >= 3);
+ok('11b 一覧の HTML に <img> も不正な文字列も入らない（画像アイコンの枠になる）', !document.querySelector('#txList img') && !html.includes('onerror') && !html.includes('javascript:') && !html.includes('svg+xml') && (html.match(/class="rc-ph/g) || []).length >= 3);
 // IDB 側に不正なサムネイルが入っていても使わない
 await rcPut({ id: badId[0], thumb: 'javascript:alert(1)', uploaded: true }); thumbMiss.clear(); thumbCache.clear(); renderTxList(); await sleep(200);
 ok('11c IndexedDB の不正なサムネイルも <img> に入れない', !document.querySelector('#txList img') && !thumbCache.has(badId[0]));
@@ -526,7 +526,9 @@ ok('12s rcPut は既存レコードとマージし、uploaded:true を false に
 // 12t viewer: 写真ボタンは表示のみ
 // Phase 4: 閲覧専用（viewer）の役割を撤去したので、「表示だけ」の確認から「常に編集・追加ボタンが出る」確認に変更
 await reset(); transactions = [mkTx('w1', { receiptIds: [mid] })]; renderTxList();
-ok('12t 取引一覧は常に編集・写真追加ボタンを出す（閲覧専用の表示は無い）', document.getElementById('txList').innerHTML.includes('➕ 追加') && document.getElementById('txList').innerHTML.includes('編集</button>') && !document.getElementById('txList').innerHTML.includes('📷 表示'));
+const row12t = document.querySelector('#txList .tx-item[onclick^="txRowClick"]'); if (row12t) row12t.click();
+ok('12t 取引一覧は常に行を押して編集でき（閲覧専用の表示は無い）、写真の追加は編集画面にある', !!row12t && document.getElementById('modalOverlay').classList.contains('open') && transactions.some(t => t.id === editingId) && !document.getElementById('txList').innerHTML.includes('📷 表示') && !!document.getElementById('receiptGallery') && !!document.getElementById('receiptCamera'));
+closeModal();
 // 12u 取引削除では画像を消さない
 await reset(); transactions = [mkTx('dl')]; await attach('dl', [await mkFile(300, 200, seed++)]); await settle();
 const dlId = transactions[0].receiptIds[0]; deleteTx('dl'); await settle();
