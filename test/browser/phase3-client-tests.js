@@ -78,7 +78,7 @@ const reset = async () => {
   srv.receipts.clear();
   await idbClear(); thumbCache.clear(); thumbMiss.clear(); thumbBusy.clear(); legacyIdMap.clear(); legacyBadWarned = false; rcMemWarned = false;
   rcGen++; rcScanGen = -1; receiptPendingN = 0; receiptRerun = false; authFails = 0;
-  transactions = []; auditLog = []; auditOutbox = []; modalReceiptIds = []; quickReceiptTxId = null;
+  transactions = []; auditLog = []; auditOutbox = []; modalReceiptIds = [];
   LS_KEYS.forEach(k => localStorage.removeItem(k));
   log.length = 0; toasts.length = 0; lastBlob = null;
   document.getElementById('receiptDialog').classList.remove('open'); document.getElementById('modalOverlay').classList.remove('open');
@@ -95,7 +95,8 @@ const mkFile = async (w, h, seed, o) => new File([await mkCanvasBlob(w, h, seed,
 const blobToDataUrl = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
 const mkTx = (id, extra = {}) => migrateTx({ id, type: 'income', summary: 'S' + id, payee: '', amount: 100, status: 'done', date: '2026-10-' + String(1 + (parseInt(id.replace(/\D/g, '')) || 0) % 28).padStart(2, '0'), account: '現金', category: '', applied: true, cashBreakdown: null, createdAt: '2026-10-01T00:00:00Z', ...extra });
 const serverData = (txs, extra = {}) => ({ counts: { 1000: 1 }, bankBalance: 100, transactions: txs, categories: [...DEFAULT_CATS], budgets: {}, collections: [], auditLog: [], savedAt: '2026-10-01T00:00:00Z', ...extra });
-const attach = async (txId, files) => { quickReceiptTxId = txId; await handleQuickReceipt({ target: { files, value: '' } }); };
+// 取引に写真を付ける（画面では編集画面から付ける。一覧からの直接追加は廃止したので、同じ処理をここで行う）
+const attach = async (txId, files) => { const ids = await addReceiptImages(files); const tx = transactions.find(t => t.id === txId); if (!tx || !ids.length) return; tx.receiptIds = [...tx.receiptIds, ...ids.filter(i => !tx.receiptIds.includes(i))]; rcDirty(); persist(); renderTxList(); uploadPendingReceipts(); };
 const imgDim = async (dataUrl) => { const b = await createImageBitmap(dataUrlToBlob(dataUrl)); const r = [b.width, b.height]; b.close(); return r; };
 const dataPosts = () => posts('/api/data').map(l => JSON.parse(l.body));
 const hasImg = v => JSON.stringify(v).includes('data:image');
@@ -215,7 +216,7 @@ ok('5d 処理中に閉じた画面へ写真を足さない', modalReceiptIds.len
 await reset();
 transactions = [mkTx('e1')]; await attach('e1', [await mkFile(400, 300, seed++), await mkFile(400, 300, seed++)]); await settle();
 ok('6a 前提: 取引に2枚', transactions[0].receiptIds.length === 2);
-editTx('e1');
+openModal('e1');
 ok('6b 編集画面に2枚', modalReceiptIds.length === 2);
 removeReceiptAt(0); removeReceiptAt(0);
 ok('6c 全部消した', modalReceiptIds.length === 0 && document.getElementById('receiptThumbs').innerHTML === '');
@@ -227,14 +228,14 @@ ok('6e サーバーのデータを読み直しても0枚・一覧に写真ボタ
 await reset();
 transactions = [mkTx('e2')]; await attach('e2', [await mkFile(400, 300, seed++), await mkFile(400, 300, seed++)]); await settle();
 const keep2 = transactions[0].receiptIds[1];
-editTx('e2'); removeReceiptAt(0); saveTx(); await settle();
+openModal('e2'); removeReceiptAt(0); saveTx(); await settle();
 ok('6f 1枚だけ消すと残りの1枚になる', transactions[0].receiptIds.join() === keep2);
 // 旧形式の画像を持つ取引を編集しても _legacyReceipts は失わない
 await reset();
 const lg = await blobToDataUrl(await mkCanvasBlob(200, 150, seed++));
 transactions = [mkTx('e3', { receipt: lg })];
 ok('6g migrateTx: 旧 receipt は _legacyReceipts に移り receipt/receipts は消える', transactions[0]._legacyReceipts?.[0] === lg && !('receipt' in transactions[0]) && !('receipts' in transactions[0]));
-srv.rcMode = 'offline'; editTx('e3'); document.getElementById('formSummary').value = 'Se3改'; saveTx(); await settle();
+srv.rcMode = 'offline'; openModal('e3'); document.getElementById('formSummary').value = 'Se3改'; saveTx(); await settle();
 ok('6h 編集しても _legacyReceipts を引き継ぐ（送信データにも残る）', transactions[0]._legacyReceipts?.[0] === lg && dataPosts().at(-1).data.transactions[0].receipts?.[0] === lg, dataPosts().length);
 
 // ================= 7. 旧形式（umabu）: inline receipt 5件

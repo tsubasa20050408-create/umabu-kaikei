@@ -33,7 +33,6 @@ button{cursor:pointer;background:none;border:none}
 .pin-btn:active{background:rgba(255,255,255,.28);transform:scale(.95)}.pin-btn.empty{visibility:hidden}
 #lockScreen :focus-visible{outline-color:#fff}
 .lock-error{color:#ffb4a3;font-size:13px;margin-top:16px;min-height:20px;font-weight:700;text-align:center}
-.setup-box{margin-top:20px;text-align:center;color:rgba(255,255,255,.85);font-size:13px;max-width:260px}
 /* ----- 上部バー ----- */
 .topbar{max-width:700px;margin:0 auto;padding:18px 20px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
@@ -48,7 +47,6 @@ button{cursor:pointer;background:none;border:none}
 .round-btn{width:34px;height:34px;border-radius:var(--r-pill);border:1px solid var(--hairline);background:var(--surface);color:var(--text2);display:inline-flex;align-items:center;justify-content:center;position:relative;flex-shrink:0}
 .round-btn.sq{width:44px;height:44px;border-radius:var(--r-ctl)}.round-btn.sq::after{display:none}
 .round-btn.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-soft2)}
-.search-badge{background:var(--payment);color:#fff;border-radius:10px;padding:1px 5px;font-size:11px;margin-left:3px}
 /* ----- 同期バナー（同期ピルで開閉） ----- */
 .sync-banner{display:none;max-width:700px;margin:4px auto 0;padding:0 16px}
 .sync-banner.active{display:block}
@@ -79,7 +77,6 @@ button{cursor:pointer;background:none;border:none}
 .card-h .grow{flex:1}
 .section-title{font-size:12px;font-weight:700;color:var(--text2);margin:18px 4px 6px}
 .empty-note{padding:28px 20px;text-align:center;color:var(--text2);font-size:13px}
-.hairline-top{margin-top:12px;padding-top:12px;border-top:1px solid var(--hairline-soft)}
 /* ----- ボタン ----- */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:46px;padding:0 20px;border-radius:var(--r-pill);border:1px solid var(--hairline);background:var(--surface);color:var(--text);font-size:14px;white-space:nowrap}
 .btn.primary{height:50px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-size:15px;font-weight:700}
@@ -278,10 +275,6 @@ input[type=checkbox]{accent-color:var(--accent);width:20px;height:20px;flex-shri
     <button class="pin-btn empty" tabindex="-1" aria-hidden="true"></button><button class="pin-btn" onclick="pinInput('0')">0</button><button class="pin-btn" onclick="pinDelete()" aria-label="1文字消す"><i data-icon="delete" data-size="24"></i></button>
   </div>
   <div class="lock-error" id="lockError" role="alert"></div>
-  <div class="setup-box" id="setupBox" style="display:none">
-    <div>PINが設定されていません。<br>4桁のPINを設定してください。</div>
-    <div id="setupStep" style="margin-top:8px;opacity:.8;font-size:12px"></div>
-  </div>
 </div>
 <header class="topbar">
   <div class="brand">
@@ -585,7 +578,6 @@ input[type=checkbox]{accent-color:var(--accent);width:20px;height:20px;flex-shri
     </div>
   </div>
 </div>
-<input type="file" id="receiptQuickInput" accept="image/*" multiple onchange="handleQuickReceipt(event)" style="display:none">
 <!-- 領収書プレビュー -->
 <div class="dialog-overlay" id="receiptDialog" onclick="this.classList.remove('open')">
   <div class="receipt-box" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-label="領収書">
@@ -654,7 +646,7 @@ const isAuditEntry=a=>!!a&&typeof a.ts==='string'&&typeof a.action==='string';
 let auditOutbox=(()=>{try{const v=JSON.parse(localStorage.getItem('circle_audit_outbox')||'[]');return Array.isArray(v)?v.filter(isAuditEntry):[];}catch{return[];}})();
 let auditFlushing=false,auditArchiveCache=[],auditArchiveLoaded=false;
 let currentFilter='all',editingId=null,modalType='income',modalStatus='done',modalAccount='現金';
-let searchActive=false,searchFilters={},modalReceiptIds=[],quickReceiptTxId=null,previewReceiptId=null,previewReceiptIndex=0;
+let searchActive=false,searchFilters={},modalReceiptIds=[],previewReceiptId=null,previewReceiptIndex=0;
 let currentPeriod='month',periodFrom='',periodTo='';
 let donutChart=null,barChart=null;
 // 年度決算・立替精算。fiscalYears は締めた年度の記録（スナップショット）、settlements は立替金の精算記録
@@ -1480,7 +1472,6 @@ function saveTx(){
   // 成功のトーストに重ならないよう、少し後に出す
   if(hint)setTimeout(()=>showToast('💡 現金タブの枚数も更新してください（内訳を入れると自動で足せます）'),2600);
 }
-function editTx(id){openModal(id);}
 // 削除は編集画面から（一覧の行には削除ボタンを置かない）。確認・精算済みの拒否・現金/通帳の戻しは deleteTx のまま。消えた時だけ画面を閉じる
 function deleteTxFromModal(){
   const id=editingId;if(!id)return;
@@ -1771,17 +1762,6 @@ function downloadReceipt(){if(previewReceiptId!=null)downloadReceiptById(preview
 function downloadAllReceiptsForCurrent(){
   const tx=transactions.find(t=>t.id===previewReceiptId);const list=tx?.receiptIds||[];
   list.forEach((rid,i)=>setTimeout(()=>downloadReceiptById(previewReceiptId,i),i*400));
-}
-function quickAttachFromFolder(id){quickReceiptTxId=id;document.getElementById('receiptQuickInput').click();}
-async function handleQuickReceipt(e){
-  const files=[...e.target.files];e.target.value='';if(!files.length||!quickReceiptTxId)return;
-  const id=quickReceiptTxId;quickReceiptTxId=null;
-  const ids=await addReceiptImages(files);
-  const tx=transactions.find(t=>t.id===id);
-  if(!tx||!ids.length)return;
-  const add=ids.filter(i=>!tx.receiptIds.includes(i));
-  tx.receiptIds=[...tx.receiptIds,...add];
-  rcDirty();persist();renderTxList();showToast(`📷 領収書を${add.length}枚追加しました`);uploadPendingReceipts();
 }
 
 // ===== TAB =====
